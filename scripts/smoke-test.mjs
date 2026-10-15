@@ -16,6 +16,11 @@ const browser = await chromium.launch({
 });
 const errors = [];
 
+async function closeTestServer(server) {
+  server.closeAllConnections();
+  await new Promise(resolveClose => server.close(resolveClose));
+}
+
 async function geometryHash(page, useParcels = false) {
   const snapshot = await page.evaluate(useParcels => {
     const model = window.__testModel;
@@ -420,6 +425,69 @@ async function checkNeighborhoodTopology(page) {
   return { bends, junctions };
 }
 
+async function checkBuildingGroups(page) {
+  const districts = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.frontageBlocks.flatMap((block, index) => block.length ? [{
+      buildings: model.patches[index].ward.geometry.map(points), ids: model.frontageGroupIds[index],
+      passages: model.frontageGroupPassages[index].map(points),
+    }] : []);
+  });
+  const sharedWall = (first, second) => {
+    let longest = 0;
+    for (let index = 0; index < first.length; index += 1) {
+      const start = first[index];
+      const end = first[(index + 1) % first.length];
+      const direction = [end[0] - start[0], end[1] - start[1]];
+      const length = Math.hypot(...direction);
+      if (length < 1e-7) continue;
+      for (let other = 0; other < second.length; other += 1) {
+        const otherStart = second[other];
+        const otherEnd = second[(other + 1) % second.length];
+        const distances = [otherStart, otherEnd].map(point => Math.abs(direction[0] * (point[1] - start[1])
+          - direction[1] * (point[0] - start[0])) / length);
+        if (distances.some(distance => distance > 1e-6)) continue;
+        const projections = [otherStart, otherEnd].map(point => ((point[0] - start[0]) * direction[0]
+          + (point[1] - start[1]) * direction[1]) / length);
+        longest = Math.max(longest, Math.min(length, Math.max(...projections)) - Math.max(0, Math.min(...projections)));
+      }
+    }
+    return longest;
+  };
+  let groups = 0;
+  let attached = 0;
+  let detached = 0;
+  for (const district of districts) {
+    assert.equal(district.ids.length, district.buildings.length, 'Every building must retain group membership metadata');
+    const members = new Map();
+    district.ids.forEach((id, index) => {
+      if (id < 0) detached += 1;
+      else members.set(id, [...(members.get(id) ?? []), index]);
+    });
+    assert.equal(district.passages.length, members.size * 2, 'Each accepted group must reserve two end passages');
+    for (const indices of members.values()) {
+      assert.ok(indices.length >= 2 && indices.length <= 5, 'Attached frontages must be short groups of 2–5 buildings');
+      for (let index = 1; index < indices.length; index += 1) {
+        assert.ok(sharedWall(district.buildings[indices[index - 1]], district.buildings[indices[index]]) > 0.3,
+          'Consecutive attached buildings must share a positive-length party wall, not merely approach or touch at a point');
+      }
+      groups += 1;
+      attached += indices.length;
+    }
+    for (const passage of district.passages) {
+      assert.ok(polygonArea(passage) > 0, 'Group-end passages must have positive width');
+      for (const building of district.buildings) {
+        const intersection = polygonClipping.intersection([passage], [building]);
+        const overlap = intersection.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+        assert.ok(overlap < 1e-6, 'Group-end passages must remain free of all buildings');
+      }
+    }
+  }
+  assert.ok(detached > 0, 'Grouping must preserve a mixture of detached buildings');
+  return { groups, attached, detached };
+}
+
 function pixelVariation(bytes) {
   const image = PNG.sync.read(bytes);
   let differing = 0;
@@ -490,7 +558,7 @@ try {
       }
       console.log('PASS: building, street, road, and wall geometry matches upstream at three sizes');
     } finally {
-      await new Promise(resolveClose => baseline.server.close(resolveClose));
+      await closeTestServer(baseline.server);
     }
   } else {
     console.log('SKIP: upstream comparison (no .toolchain/upstream-baseline build)');
@@ -576,7 +644,7 @@ try {
       assert.ok(currentArea > previousArea * 1.05, 'Frontage placement must improve occupied area over centroid-only fitting');
       console.log(`PASS: size ${size} building area improved ${((currentArea / previousArea - 1) * 100).toFixed(1)}%`);
     } finally {
-      await new Promise(resolveClose => previous.server.close(resolveClose));
+      await closeTestServer(previous.server);
     }
     await capture(page, `${address}&buildings=footprints`);
     const footprintHash = await geometryHash(page);
@@ -613,6 +681,7 @@ try {
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   for (const [size, seed, walls] of [[6, 42, 0], [15, 682063530, 1], [40, 682063530, 1], [40, 123456, 0]]) {
+    console.log(`CHECK: Block Rows size ${size}, seed ${seed}, walls ${walls}`);
     const address = `${url}/?size=${size}&seed=${seed}&walls=${walls}`;
     await capture(page, address);
     const original = await geometryHash(page);
@@ -626,10 +695,39 @@ try {
     console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
     console.log(`PASS: neighborhood topology: ${JSON.stringify(topology)}`);
     const after = await districtCoverage(page);
+    const grouping = await checkBuildingGroups(page);
+    if (size >= 15) assert.ok(grouping.groups > 0, 'Larger test cities must include real attached frontage groups');
+    console.log(`PASS: building grouping: ${JSON.stringify(grouping)}`);
     const transitions = await checkDistrictTransitions(page);
     const lanesBeforeReference = await neighborhoodLaneHash(page);
     const afterGeometry = await transitionGeometry(page);
     const boundaryPairs = await sharedBoundaryPairs(page);
+    const groupingReference = await startServer({ root: resolve('.toolchain/grouping-reference'), port: 0 });
+    try {
+      await capture(page, `${groupingReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
+        `test-results/grouping-before-${size}-${seed}.png`);
+      assert.equal(await neighborhoodLaneHash(page), lanesBeforeReference, 'Attached grouping must preserve every neighborhood lane');
+      const before = await districtCoverage(page);
+      const shared = after.flatMap(district => {
+        const previous = before.find(candidate => candidate.index === district.index);
+        return previous ? [{ before: previous, after: district }] : [];
+      });
+      const oldArea = shared.reduce((sum, pair) => sum + pair.before.buildingArea, 0);
+      const newArea = shared.reduce((sum, pair) => sum + pair.after.buildingArea, 0);
+      assert.ok(shared.length > 0 && newArea >= oldArea * 0.97 && newArea <= oldArea * 1.08,
+        'Attached groups must preserve the pre-grouping building-area budget');
+      await writeFile(`test-results/grouping-${size}-${seed}.json`, JSON.stringify({ size, seed, walls,
+        grouping, oldArea, newArea, districts: shared }, null, 2));
+      if (size === 40 && walls === 1) {
+        const download = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        await (await download).saveAs('test-results/grouping-before-export.png');
+        await saveNeighborhood(await readFile('test-results/grouping-before-export.png'),
+          'test-results/grouping-before-neighborhood.png', 500, 450);
+      }
+    } finally {
+      await closeTestServer(groupingReference.server);
+    }
     const transitionReference = await startServer({ root: resolve('.toolchain/transitions-reference'), port: 0 });
     try {
       await capture(page, `${transitionReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
@@ -657,7 +755,7 @@ try {
           'test-results/transitions-before-neighborhood.png', 500, 450);
       }
     } finally {
-      await new Promise(resolveClose => transitionReference.server.close(resolveClose));
+      await closeTestServer(transitionReference.server);
     }
     const topologyReference = await startServer({ root: resolve('.toolchain/topology-reference'), port: 0 });
     try {
@@ -684,7 +782,7 @@ try {
           'test-results/topology-before-neighborhood.png', 500, 450);
       }
     } finally {
-      await new Promise(resolveClose => topologyReference.server.close(resolveClose));
+      await closeTestServer(topologyReference.server);
     }
     const reference = await startServer({ root: resolve('.toolchain/coverage-reference'), port: 0 });
     try {
@@ -716,7 +814,7 @@ try {
         await saveNeighborhood(bytes, 'test-results/coverage-before-south.png', 750, 1100);
       }
     } finally {
-      await new Promise(resolveClose => reference.server.close(resolveClose));
+      await closeTestServer(reference.server);
     }
     await capture(page, `${address}&buildings=frontage`, `test-results/coverage-after-${size}-${seed}.png`);
     const rows = await geometryHash(page);
@@ -741,6 +839,7 @@ try {
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/topology-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/transitions-after-neighborhood.png', 500, 450);
+  await saveNeighborhood(rowsBytes, 'test-results/grouping-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-south.png', 750, 1100);
   const rowsPng = PNG.sync.read(rowsBytes);
   assert.equal(rowsPng.width, 2048);
@@ -768,5 +867,5 @@ try {
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');
 } finally {
   await browser.close();
-  await new Promise(resolveClose => server.close(resolveClose));
+  await closeTestServer(server);
 }

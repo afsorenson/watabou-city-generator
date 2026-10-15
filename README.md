@@ -114,6 +114,16 @@ drawn as wedges, and blocks with too few usable buildings retain their original
 geometry. Buildings do not overlap, and secondary lanes stay clear. The clipping
 engine is bundled locally; this mode does not need an online service.
 
+Compatible consecutive frontage plots can form short attached groups of 2-5
+buildings. Each building keeps its own polygon and visible outline, with an exact
+shared side-wall segment and varied rear wings. Clear end passages separate
+groups, and detached buildings remain mixed in. Clipped or incompatible plots
+keep their detached footprints; very small cities may have no accepted groups.
+Grouping preserves the lane network and building count. Each replacement group
+must retain 97-108% of its previous building area and fit inside its cell and
+block without obstructing a courtyard. This is a conservative first grouping
+pass, not a general corner-building or shared-wall construction simulation.
+
 ```text
 http://127.0.0.1:8788/?size=40&seed=682063530&walls=1&buildings=frontage
 ```
@@ -141,8 +151,9 @@ Prioritized follow-ups after neighborhood street topology:
 
 - [x] **Soften district transitions (first pass).** Use shared street context to blend building
 	scale, orientation, and density near boundaries without erasing district identity.
-- [ ] **Vary building grouping.** Mix short attached frontages, detached buildings,
-	corner buildings, and small rear structures instead of uniformly isolated plots.
+- [x] **Vary building grouping (first pass).** Mix short attached frontages and
+	detached buildings, preserve individual outlines, vary rear wings, and reserve end
+	passages. More elaborate corner buildings and independent rear structures remain future work.
 - [ ] **Clarify street hierarchy.** Distinguish main routes, neighborhood connecting
 	lanes, and narrow access passages through consistent widths and frontage spacing.
 - [ ] **Refine outskirts.** Replace raw wedge-shaped roadside plots with distinct
@@ -199,6 +210,13 @@ area contrast across paired boundary frontages. Fixed fixtures show approximatel
 25-31% lower mean absolute log-area contrast, not a universal visual-similarity
 guarantee. `transitions-*.json` records those measurements; matching crops are
 `transitions-before-neighborhood.png` and `transitions-after-neighborhood.png`.
+The pre-grouping version (`69b0c79`) verifies identical neighborhood lane geometry
+and a tight building-area budget. Checks require groups of 2-5 individual polygons
+with positive-length party walls, detached fallbacks, clear end passages, and no
+overlaps. `grouping-*.json` records group counts and matching-district areas;
+`grouping-before-neighborhood.png` and `grouping-after-neighborhood.png` provide
+same-seed visual crops. Test reference servers explicitly close their connections
+after captures to avoid waiting indefinitely on browser HTTP teardown.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 

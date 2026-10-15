@@ -17,6 +17,8 @@ class BlockFrontage {
 		model.frontageLanePaths = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLaneKinds = [for (patch in model.patches) new Array<String>()];
 		model.frontageTransitions = [for (patch in model.patches) null];
+		model.frontageGroupIds = [for (patch in model.patches) new Array<Int>()];
+		model.frontageGroupPassages = [for (patch in model.patches) new Array<Polygon>()];
 		for (patchIndex in 0...model.patches.length) {
 			var patch = model.patches[patchIndex];
 			if (!patch.withinCity || !Std.is( patch.ward, CommonWard ) || patch.ward.geometry.length == 0) continue;
@@ -102,6 +104,8 @@ class BlockFrontage {
 			var reserveCourtyard = (((patchIndex * 73856093) ^ seed) & 0x7fffffff) % 3 == 0 && block.square > lotArea * 12;
 			var buildings:Array<Polygon> = [];
 			var plots:Array<Polygon> = [];
+			var groupIds:Array<Int> = [];
+			var groupPassages:Array<Polygon> = [];
 			for (row in 0...rows) {
 				for (column in 0...columns) {
 					var left = bandCuts[row][column] + (column == 0 ? 0.08 : laneWidth / 2);
@@ -126,6 +130,7 @@ class BlockFrontage {
 					var split = 0.42 + (((seed ^ (row * 19349663) ^ (column * 73856093)) & 0x7fffffff) % 17) / 100;
 					var rowFractions = lotRows == 2 ? [0.0, split, 1.0] : [for (index in 0...lotRows + 1) index / lotRows];
 					for (lotRow in 0...lotRows) {
+						var rowStart = buildings.length;
 						var rowCenter = toWorld( new Polygon( [new Point( (left + right) / 2,
 							front + (back - front) * (rowFractions[lotRow] + rowFractions[lotRow + 1]) / 2 )] ), center, axis )[0];
 						var rowWidth = Math.max( 1.2, Math.sqrt( transitions.sample( rowCenter ).area ) * 0.9 );
@@ -175,9 +180,12 @@ class BlockFrontage {
 									for (building in BuildingFootprints.fromFrontagePlot( polygon, lot, variation, true, transitions.alignmentAt( polygon.centroid ) )) {
 									buildings.push( building );
 									plots.push( polygon );
+										groupIds.push( -1 );
 								}
 							}
 						}
+						BuildingGroups.apply( buildings, plots, groupIds, groupPassages, rowStart, center, axis, cell, block, courtyard,
+							(seed ^ (patchIndex * 73856093) ^ (row * 19349663) ^ (column * 83492791) ^ (lotRow * 49979687)) & 0x7fffffff );
 					}
 				}
 			}
@@ -191,6 +199,8 @@ class BlockFrontage {
 			model.frontageLanePaths[patchIndex] = paths;
 			model.frontageLaneKinds[patchIndex] = kinds;
 			model.frontageTransitions[patchIndex] = transitions;
+			model.frontageGroupIds[patchIndex] = groupIds;
+			model.frontageGroupPassages[patchIndex] = groupPassages;
 		}
 		#end
 	}
