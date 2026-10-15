@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City Build Comparison</title>
+  <link rel="icon" href="./favicon.png">
+  <link rel="stylesheet" href="./controls.css">
+</head>
+<body class="comparison-page">
+  <header class="toolbar">
+    <div class="identity"><a id="back-link" class="back-link" title="Return to city" aria-label="Return to city"><img src="./icons/arrow-left.svg" alt=""></a><h1>Build Comparison</h1></div>
+    <form id="comparison-form" class="comparison-settings">
+      <label>Before <select id="before-build" aria-label="Before build" required></select></label>
+      <label>After <select id="after-build" aria-label="After build" required></select></label>
+      <label>Seed <input id="comparison-seed" type="number" min="1" max="2147483646" step="1" required></label>
+      <label>City size <input id="comparison-size" type="number" min="6" max="40" step="1" required></label>
+      <label><input id="comparison-walls" type="checkbox"> Walls</label>
+      <label>Buildings <select id="comparison-buildings" aria-label="Comparison buildings"><option value="original">Original</option><option value="footprints">Footprints</option><option value="frontage">Block Rows</option></select></label>
+      <button id="render-comparison" type="submit" title="Apply comparison settings" aria-label="Apply comparison settings"><img src="./icons/check.svg" alt=""><span>Apply</span></button>
+    </form>
+    <label>View <select id="comparison-region" aria-label="Comparison view"><option value="whole">Whole City</option><option value="northwest">Northwest</option><option value="center">Center</option><option value="south">South</option></select></label>
+    <button id="copy-comparison" type="button" title="Copy comparison link" aria-label="Copy comparison link"><img src="./icons/link.svg" alt=""><span>Copy Link</span></button>
+  </header>
+  <output id="comparison-status" role="status"></output>
+  <main class="comparison-layout">
+    <figure class="comparison-panel" data-side="before"><figcaption><strong>Before</strong><output class="comparison-build"></output><button class="download-comparison" type="button" title="Download before PNG" aria-label="Download before PNG" disabled><img src="./icons/download.svg" alt=""></button></figcaption><canvas class="comparison-canvas" width="600" height="600" aria-label="Before city map"></canvas></figure>
+    <figure class="comparison-panel" data-side="after"><figcaption><strong>After</strong><output class="comparison-build"></output><button class="download-comparison" type="button" title="Download after PNG" aria-label="Download after PNG" disabled><img src="./icons/download.svg" alt=""></button></figcaption><canvas class="comparison-canvas" width="600" height="600" aria-label="After city map"></canvas></figure>
+  </main>
+  <dialog id="comparison-link-dialog"><form method="dialog"><label for="comparison-link">Comparison link</label><input id="comparison-link" type="text" readonly><button>Close</button></form></dialog>
+  <script src="./build-info.js"></script>
+  <script src="./compare.js" type="module"></script>
+</body>
+</html>

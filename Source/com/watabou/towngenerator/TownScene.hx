@@ -76,7 +76,7 @@ class TownScene extends Scene {
 		var bytes:haxe.io.Bytes = png;
 		var suffix = StateManager.blockFrontage ? "-frontage" : (StateManager.footprints ? "-footprints" : "");
 		new FileReference().save( ByteArray.fromBytes( bytes.sub( 0, png.length ) ),
-			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}$suffix.png' );
+			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}$suffix-${BuildInfo.identifier()}.png' );
 	}
 
 	private var scale(get,set) : Float;

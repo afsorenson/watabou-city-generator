@@ -25,12 +25,16 @@ export async function startServer({ root = resolve(projectRoot, 'Export/html5/bi
         return;
       }
       const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
-      const path = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
+      let path = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
       if (!path.startsWith(`${root}${sep}`)) {
         response.writeHead(403).end();
         return;
       }
-      const info = await stat(path);
+      let info = await stat(path);
+      if (info.isDirectory()) {
+        path = resolve(path, 'index.html');
+        info = await stat(path);
+      }
       if (!info.isFile()) {
         response.writeHead(404).end();
         return;

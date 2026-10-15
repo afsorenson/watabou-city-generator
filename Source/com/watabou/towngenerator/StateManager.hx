@@ -28,7 +28,7 @@ class StateManager {
 			if (size1 != null)size = (size1 >= 6 ? (size1 <= 40 ? size1: 40) : 6);
 
 			var seed1 = Std.parseInt( params.get( SEED ) );
-			if (seed1 != null) seed = (seed1 > 0 ? seed1 : -1);
+			if (seed1 != null) seed = (seed1 > 0 && seed1 < 2147483647 ? seed1 : -1);
 			walls = switch (params.get( WALLS )) {
 				case "1": true;
 				case "0": false;

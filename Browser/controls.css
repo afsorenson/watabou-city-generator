@@ -16,8 +16,16 @@ body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; ove
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex: none; background: linear-gradient(#ffffff, #f6f8f6); }
 .identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; margin-right: auto; }
 h1 { margin: 0; font: 600 20px "Palatino Linotype", "Book Antiqua", serif; }
-.seed { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.seed output { display: inline-block; min-width: 10ch; font-variant-numeric: tabular-nums; }
+.build { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.build output { font-family: Menlo, monospace; }
+.seed-setting { display: flex; gap: 6px; margin: 0; }
+#seed { width: 132px; font-variant-numeric: tabular-nums; }
+.settings, .actions { flex-wrap: wrap; }
+#build-status { padding: 6px 20px; font-size: 12px; background: #fff4d6; flex: none; }
+#build-status[hidden] { display: none; }
+.embedded .toolbar, .embedded #build-status { display: none; }
+dialog { width: min(560px, 94vw); border: 1px solid var(--line); border-radius: 6px; padding: 20px; }
+dialog input { width: 100%; margin: 12px 0; height: 36px; }
 .settings, .actions { display: flex; align-items: center; gap: 12px; }
 label { display: flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
 input[type="number"] { width: 64px; height: 36px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; background: var(--paper); color: var(--ink); }
@@ -30,11 +38,30 @@ button img { width: 17px; height: 17px; }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #openfl-content { flex: 1; min-height: 0; width: 100%; position: relative; overflow: hidden; background: var(--paper); }
 canvas { display: block; }
+.comparison-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; width: 100%; }
+.comparison-settings select { width: min(300px, 72vw); }
+#comparison-seed { width: 132px; }
+#comparison-buildings { width: 116px; }
+#comparison-status { padding: 8px 20px; color: var(--muted); font-size: 12px; flex: none; overflow-wrap: anywhere; }
+.comparison-layout { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 16px 20px; align-content: start; }
+.comparison-panel { margin: 0; min-width: 0; }
+.comparison-panel figcaption { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 0 10px; border-bottom: 1px solid var(--line); }
+.comparison-build { font: 11px Menlo, monospace; overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.comparison-canvas { width: 100%; height: auto; aspect-ratio: 1; }
+.comparison-engine { position: fixed; left: -20000px; top: 0; width: 1024px; height: 1024px; border: 0; opacity: 0; pointer-events: none; }
+.back-link { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.back-link img { width: 18px; height: 18px; }
+@media (max-width: 700px) {
+  .comparison-layout { grid-template-columns: minmax(0, 1fr); padding: 12px; gap: 20px; }
+  .comparison-settings { gap: 10px; }
+  .comparison-page .toolbar { max-height: 44dvh; overflow: auto; }
+}
 @media (max-width: 700px) {
   .toolbar { padding: 10px 12px; gap: 10px 12px; }
   .identity { flex-basis: 100%; justify-content: space-between; margin: 0; }
-  .settings { flex: 1; flex-wrap: wrap; gap: 10px; }
-  .building-setting { flex-basis: 100%; }
+  .settings { flex-basis: 100%; flex-wrap: wrap; gap: 10px; }
+  .seed-setting { flex-basis: 100%; }
+  .building-setting { flex-basis: auto; }
   .actions { gap: 8px; }
   button { width: 36px; padding: 0; }
   button span { display: none; }

@@ -15,6 +15,9 @@ const browser = await chromium.launch({
   headless: true,
 });
 const errors = [];
+const currentBuild = JSON.parse(await readFile('Export/html5/bin/build-info.json', 'utf8'));
+assert.equal(createHash('sha256').update(await readFile('Export/html5/bin/TownGenerator.js')).digest('hex'),
+  currentBuild.engineSha256, 'Build manifest must fingerprint the compiled engine actually on disk');
 
 async function closeTestServer(server) {
   server.closeAllConnections();
@@ -593,7 +596,7 @@ try {
   page.on('response', response => {
     if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`);
   });
-  await page.route('**/TownGenerator.js', async route => {
+  await page.route('**/TownGenerator.js*', async route => {
     const response = await route.fetch();
     const source = await response.text();
     const assignment = 'com_watabou_towngenerator_building_Model.instance = this;';
@@ -607,6 +610,7 @@ try {
       window.__testFrontageBuilding = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
         ? null : com_watabou_towngenerator_building_BuildingFootprints.fromFrontagePlot;`) });
   });
+  if (!process.argv.includes('--identity-only')) {
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
   const second = await capture(page, seedUrl, 'test-results/desktop-repeat.png');
@@ -640,7 +644,7 @@ try {
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
   const download = await downloadPromise;
-  assert.equal(download.suggestedFilename(), 'city-40-682063530-walled.png');
+  assert.equal(download.suggestedFilename(), `city-40-682063530-walled-${currentBuild.id}.png`);
   await download.saveAs('test-results/export.png');
   const exportedBytes = await readFile('test-results/export.png');
   const exported = PNG.sync.read(exportedBytes);
@@ -681,7 +685,7 @@ try {
     assert.ok(canvas.y >= toolbar.y + toolbar.height - 1, 'Controls must not overlap the map');
     const mobileDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
-    assert.equal((await mobileDownload).suggestedFilename(), 'city-40-682063530-walled.png');
+    assert.equal((await mobileDownload).suggestedFilename(), `city-40-682063530-walled-${currentBuild.id}.png`);
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   await capture(page, `${url}/?size=40&seed=682063530&walls=1`, 'test-results/metropolis.png');
@@ -731,7 +735,7 @@ try {
   const footprintDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
   const footprintExport = await footprintDownload;
-  assert.equal(footprintExport.suggestedFilename(), 'city-40-682063530-walled-footprints.png');
+  assert.equal(footprintExport.suggestedFilename(), `city-40-682063530-walled-footprints-${currentBuild.id}.png`);
   await footprintExport.saveAs('test-results/footprints-export.png');
   const footprintPng = PNG.sync.read(await readFile('test-results/footprints-export.png'));
   assert.equal(footprintPng.width, 2048);
@@ -932,7 +936,7 @@ try {
   const rowsDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
   const rowsExport = await rowsDownload;
-  assert.equal(rowsExport.suggestedFilename(), 'city-40-682063530-walled-frontage.png');
+  assert.equal(rowsExport.suggestedFilename(), `city-40-682063530-walled-frontage-${currentBuild.id}.png`);
   await rowsExport.saveAs('test-results/block-rows-export.png');
   const rowsBytes = await readFile('test-results/block-rows-export.png');
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-neighborhood.png', 500, 450);
@@ -961,8 +965,137 @@ try {
     assert.equal(new URL(page.url()).searchParams.get('buildings'), 'frontage');
     const mobileRowsDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
-    assert.match((await mobileRowsDownload).suggestedFilename(), /-frontage\.png$/);
+    assert.ok((await mobileRowsDownload).suggestedFilename().endsWith(`-frontage-${currentBuild.id}.png`));
   }
+  await page.setViewportSize({ width: 1200, height: 900 });
+  }
+  const restoreUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
+  await capture(page, `${url}/?size=6&seed=2147483647&walls=0`);
+  assert.ok(Number(new URL(page.url()).searchParams.get('seed')) >= 1
+    && Number(new URL(page.url()).searchParams.get('seed')) <= 2147483646,
+  'Invalid URL seeds must be replaced with a valid generator seed');
+  await capture(page, restoreUrl, 'test-results/identity-desktop.png');
+  const originalCity = await geometryHash(page);
+  assert.equal(await page.locator('#build-id').textContent(), currentBuild.id);
+  assert.equal(await page.evaluate(() => window.cityGenerator.buildId), currentBuild.id);
+  for (const invalidSeed of ['0', '2147483647', '1.5']) {
+    await page.getByLabel('Seed', { exact: true }).fill(invalidSeed);
+    await page.getByRole('button', { name: 'Apply seed' }).click();
+    assert.equal(await geometryHash(page), originalCity, 'Invalid seed input must not change the city');
+  }
+  await page.getByLabel('Seed', { exact: true }).fill('42');
+  await page.getByRole('button', { name: 'Apply seed' }).click();
+  assert.equal(new URL(page.url()).searchParams.get('seed'), '42');
+  assert.notEqual(await geometryHash(page), originalCity);
+  await page.getByLabel('Seed', { exact: true }).fill('682063530');
+  await page.getByRole('button', { name: 'Apply seed' }).click();
+  assert.equal(await geometryHash(page), originalCity, 'Applying the old seed must restore the exact city');
+  await page.getByRole('button', { name: 'Generate a new city' }).click();
+  assert.notEqual(new URL(page.url()).searchParams.get('seed'), '682063530');
+  await page.getByLabel('Seed', { exact: true }).fill('682063530');
+  await page.getByRole('button', { name: 'Apply seed' }).click();
+  await page.reload();
+  await page.waitForFunction(() => window.cityGenerator);
+  assert.equal(await geometryHash(page), originalCity, 'Seed restoration must survive refresh');
+
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
+  await page.getByRole('button', { name: 'Copy city link' }).click();
+  await page.waitForFunction(() => document.querySelector('#build-status').textContent === 'City link copied.');
+  const cityLink = await page.evaluate(() => navigator.clipboard.readText());
+  assert.ok(new URL(cityLink).pathname.includes(`/builds/${currentBuild.id}/`), 'Copied links must bind to an actual archived build');
+  assert.equal(new URL(cityLink).searchParams.get('walls'), '1');
+  assert.equal(new URL(cityLink).searchParams.get('buildings'), 'frontage');
+  await capture(page, cityLink);
+  assert.equal(await geometryHash(page), originalCity, 'Version-bound links must restore geometry and settings');
+  assert.equal(await page.evaluate(() => window.cityGenerator.buildId), currentBuild.id);
+  await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error('Clipboard unavailable'); }; });
+  await page.getByRole('button', { name: 'Copy city link' }).click();
+  assert.equal(await page.locator('#link-dialog').isVisible(), true);
+  assert.equal(await page.locator('#city-link').inputValue(), cityLink, 'Clipboard fallback must preserve the same version-bound link');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Compare builds' }).click();
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]')?.disabled,
+    { timeout: 60000 });
+  assert.equal(new URL(page.url()).searchParams.get('seed'), '682063530');
+  assert.equal(new URL(page.url()).searchParams.get('size'), '40');
+  assert.equal(new URL(page.url()).searchParams.get('walls'), '1');
+  assert.equal(new URL(page.url()).searchParams.get('buildings'), 'frontage');
+  assert.equal(await page.locator('[data-side="after"] .comparison-build').textContent(), currentBuild.id);
+  assert.ok(pixelVariation(await page.locator('[data-side="after"] canvas').screenshot()) > 1000,
+    'Comparison must show a rendered city, not just labels');
+  await page.screenshot({ path: 'test-results/comparison-desktop.png' });
+  const wholeDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download after PNG' }).click();
+  const wholeExport = await wholeDownload;
+  assert.ok(wholeExport.suggestedFilename().includes(currentBuild.id));
+  await wholeExport.saveAs('test-results/comparison-after.png');
+  assert.equal(PNG.sync.read(await readFile('test-results/comparison-after.png')).width, 2048);
+  await page.getByLabel('Comparison view', { exact: true }).selectOption('northwest');
+  assert.equal(new URL(page.url()).searchParams.get('view'), 'northwest');
+  assert.ok(pixelVariation(await page.locator('[data-side="before"] canvas').screenshot()) > 1000,
+    'Matching neighborhood crop must contain real map pixels');
+  const cropDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download after PNG' }).click();
+  const cropExport = await cropDownload;
+  assert.ok(cropExport.suggestedFilename().endsWith('-northwest.png'));
+  await cropExport.saveAs('test-results/comparison-crop.png');
+  assert.equal(PNG.sync.read(await readFile('test-results/comparison-crop.png')).width, 600);
+  await page.getByRole('button', { name: 'Copy comparison link' }).click();
+  const comparisonLink = await page.evaluate(() => navigator.clipboard.readText());
+  assert.equal(new URL(comparisonLink).searchParams.get('after'), currentBuild.id);
+  assert.equal(new URL(comparisonLink).searchParams.get('view'), 'northwest');
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.screenshot({ path: `test-results/comparison-mobile-${width}.png` });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Comparison controls must fit mobile width');
+  }
+  await page.goto(comparisonLink);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]')?.disabled,
+    { timeout: 60000 });
+  assert.equal(await page.getByLabel('Comparison view', { exact: true }).inputValue(), 'northwest');
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.getByLabel('Before build', { exact: true }).selectOption(currentBuild.id);
+  await page.getByLabel('Seed', { exact: true }).fill('42');
+  await page.getByLabel('City size', { exact: true }).fill('15');
+  await page.getByLabel('Walls', { exact: true }).uncheck();
+  await page.getByLabel('Comparison buildings', { exact: true }).selectOption('footprints');
+  await page.getByRole('button', { name: 'Apply comparison settings' }).click();
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]').disabled);
+  await page.waitForFunction(() => document.querySelector('#comparison-status').textContent
+    === 'Seed 42 · Size 15 · Open · footprints');
+  assert.equal(new URL(page.url()).searchParams.get('seed'), '42');
+  assert.equal(new URL(page.url()).searchParams.get('size'), '15');
+  assert.equal(new URL(page.url()).searchParams.get('walls'), '0');
+  assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
+  const comparisonImages = await page.evaluate(() => ['before', 'after'].map(side =>
+    document.querySelector(`[data-side="${side}"] canvas`).toDataURL().split(',')[1]));
+  const comparisonBuffers = comparisonImages.map(image => Buffer.from(image, 'base64'));
+  await writeFile('test-results/comparison-equal-before.png', comparisonBuffers[0]);
+  await writeFile('test-results/comparison-equal-after.png', comparisonBuffers[1]);
+  const beforePixels = PNG.sync.read(comparisonBuffers[0]);
+  const afterPixels = PNG.sync.read(comparisonBuffers[1]);
+  let changedPixels = 0;
+  for (let offset = 0; offset < beforePixels.data.length; offset += 4) {
+    if (beforePixels.data[offset] !== afterPixels.data[offset]
+      || beforePixels.data[offset + 1] !== afterPixels.data[offset + 1]
+      || beforePixels.data[offset + 2] !== afterPixels.data[offset + 2]) changedPixels += 1;
+  }
+  assert.equal(changedPixels, 0, 'The same build and locked settings must render identical matching crops');
+  const changedDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download after PNG' }).click();
+  assert.ok((await changedDownload).suggestedFilename().startsWith('city-15-42-open-footprints-after-'));
+  await page.goto(`${url}/compare.html?before=unavailable-build&after=${currentBuild.id}`);
+  await page.waitForFunction(() => document.querySelector('#comparison-status').textContent.includes('unavailable'));
+  assert.equal(await page.getByRole('button', { name: 'Download after PNG' }).isDisabled(), true,
+    'A missing archived engine must not silently render or export the current engine');
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto(cityLink);
+  await page.waitForFunction(() => window.cityGenerator);
+  await page.screenshot({ path: 'test-results/identity-mobile-320.png' });
+  assert.equal(await geometryHash(page), originalCity);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Seed and build controls must fit mobile width');
+  console.log('PASS: compiled build identity, editable seed restoration, version-bound sharing, real-build comparison, matching crops and mobile layout');
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');
 } finally {

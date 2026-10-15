@@ -48,9 +48,24 @@ library paths are absolute.
 
 ### Generate And Export
 
+The toolbar shows the **Build** ID actually compiled into the engine. PNG filenames
+include that ID as well as size, seed, walls, and building mode. The ID combines
+the Git revision with a source fingerprint; `dirty` means the build included local
+uncommitted runtime changes. The engine's SHA-256 is recorded in `build-info.json`.
+A mismatch between the page metadata and engine produces a visible warning.
+
+Enter an integer **Seed** from 1 to 2147483646 and choose **Apply** (or press Enter)
+to restore it without changing the other settings. **New City** chooses a new seed.
+Refresh preserves the seed and settings already in the URL. Invalid URL seeds are
+replaced with a valid seed rather than passed to the random generator.
+
+**Copy Link** copies the actual seed, size, wall state, and building mode into a
+link bound to an archived build. If clipboard access is unavailable, a dialog
+provides the link. Links are local to this server, not cloud-shared map saves.
+
 Set **City size** from 6 to 40 (the original engine's patch count). New sessions
 default to 40 for a large-city comparison. Change size to rebuild at the current
-seed, or choose **Generate** for a new seed. **Walls** controls the city perimeter;
+seed, or choose **New City** for a new seed. **Walls** controls the city perimeter;
 castles can remain individually fortified even with city walls off.
 
 Size, seed, and explicit wall choices are stored in the URL, for example:
@@ -63,6 +78,31 @@ Bookmark a URL to reproduce its city. `walls=1` enables city walls and `walls=0`
 disables them. URLs without `walls` retain the original engine's seeded random
 wall choice. Changing size preserves this automatic behavior until you explicitly
 toggle the checkbox. Changing either setting keeps the seed.
+
+### Compare Builds
+
+Choose **Compare** to open two real local engine snapshots with the same seed,
+size, wall state, and building mode. Select **Before** and **After**, then **Apply**
+to render them. **View** switches between the whole 2048px map and matching 600px
+Northwest, Center, or South neighborhood crops. Each panel identifies its actual
+build and can download its full map or selected crop. **Copy Link** preserves both
+build IDs, all settings, and the selected view.
+
+Builds are retained under `.toolchain/build-history/` and published into the local
+server's generated `builds/` directory at build time. They are not silently pruned.
+Back up that history if exact restoration matters; it is ignored by Git and is not
+automatically transferred to another Mac. A seed alone cannot guarantee the same
+city after generation algorithms change. Version-bound links need their archived
+engine to remain available. Saving city geometry is still future work.
+
+The existing pre-identification build is preserved with a `legacy-<engine hash>`
+label rather than assigning it an unverified Git revision. Since this update does
+not change valid-seed generation, comparing it against the preceding build should
+show the same city. Differences are expected only when comparing actual engine
+changes. Missing or incompatible builds are reported rather than replaced by the
+current engine.
+
+### Building Modes
 
 **Buildings** switches between **Original** parcel-shaped buildings and the
 optional **Footprints** mode. Switching modes preserves the seed, size, walls,
@@ -152,8 +192,8 @@ and the castle, with an 8% margin for adjacent development. Distant farms and
 approach roads are cropped, not removed from the generated model. Exports remain
 2048 x 2048 with an additional 64-pixel minimum outer margin and no UI controls.
 Ground and streets are white, buildings gray, and outlines and walls black.
-Footprints-mode filenames end in `-footprints.png` so comparisons are distinct.
-Block Rows filenames end in `-frontage.png`.
+Export filenames include `footprints` or `frontage` when selected, followed by the
+compiled build ID. Comparison exports also identify before/after and the crop.
 
 ### Next Visual Refinements
 
@@ -180,6 +220,18 @@ should remain available as unchanged comparison modes.
 npm run build
 npm test
 ```
+
+For just seed/build identity and comparison workflows after a build:
+
+```sh
+npm run test:identity
+```
+
+These checks validate seed restoration after refresh/New City, invalid inputs,
+compiled engine fingerprints, build-bound links and clipboard fallback, locked
+comparison settings, real archived-engine rendering, identical-build crop pixels,
+full/cropped PNG downloads, and desktop/mobile layouts. The full test command
+includes these checks alongside the geometry regressions below.
 
 Tests use installed Google Chrome; set `CHROME_PATH` for another Chrome location.
 They build the untouched upstream commit

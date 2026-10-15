@@ -5,28 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>City Generator</title>
   <link rel="icon" href="./favicon.png">
-  <link rel="stylesheet" href="./controls.css">
+  <link rel="stylesheet" href="./controls.css?build=__CITY_BUILD_ID__">
 </head>
 <body>
   <header class="toolbar">
     <div class="identity">
       <h1>City Generator</h1>
-      <span class="seed">Seed <output id="seed"></output></span>
+      <span class="build">Build <output id="build-id"></output></span>
     </div>
     <div class="settings">
+      <form id="seed-form" class="seed-setting">
+        <label for="seed">Seed <input id="seed" type="number" min="1" max="2147483646" step="1" required disabled></label>
+        <button id="apply-seed" type="submit" title="Apply seed" aria-label="Apply seed" disabled><img src="./icons/check.svg" alt=""><span>Apply</span></button>
+      </form>
       <label for="city-size">City size <input id="city-size" type="number" min="6" max="40" step="1" value="40" disabled></label>
       <label class="wall-setting"><input id="walls" type="checkbox" disabled> Walls</label>
       <label class="building-setting" for="buildings">Buildings <select id="buildings" aria-label="Buildings" disabled><option value="original">Original</option><option value="footprints">Footprints</option><option value="frontage">Block Rows</option></select></label>
     </div>
     <div class="actions">
-      <button id="regenerate" type="button" title="Generate a new city" aria-label="Generate a new city" disabled><img src="./icons/refresh-cw.svg" alt=""><span>Generate</span></button>
+      <button id="regenerate" type="button" title="Generate a new city" aria-label="Generate a new city" disabled><img src="./icons/refresh-cw.svg" alt=""><span>New City</span></button>
+      <button id="copy-link" type="button" title="Copy city link" aria-label="Copy city link" disabled><img src="./icons/link.svg" alt=""><span>Copy Link</span></button>
+      <button id="compare" type="button" title="Compare builds" aria-label="Compare builds" disabled><img src="./icons/columns-2.svg" alt=""><span>Compare</span></button>
       <button id="export" type="button" title="Export PNG" aria-label="Export PNG" disabled><img src="./icons/download.svg" alt=""><span>Export PNG</span></button>
     </div>
   </header>
+  <output id="build-status" role="status" hidden></output>
+  <dialog id="link-dialog"><form method="dialog"><label for="city-link">City link</label><input id="city-link" type="text" readonly><button>Close</button></form></dialog>
   <main id="openfl-content" aria-label="Generated city map"></main>
   <script src="./vendor/polygon-clipping.umd.min.js"></script>
-  <script src="./TownGenerator.js"></script>
-  <script src="./controls.js"></script>
+  <script src="./build-info.js?build=__CITY_BUILD_ID__"></script>
+  <script src="./TownGenerator.js?build=__CITY_BUILD_ID__"></script>
+  <script src="./controls.js?build=__CITY_BUILD_ID__"></script>
   <script>lime.embed("TownGenerator", "openfl-content", 0, 0, { parameters: {} });</script>
 </body>
 </html>
