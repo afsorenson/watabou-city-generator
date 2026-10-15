@@ -19,6 +19,8 @@ class CommonWard extends Ward {
 		this.emptyProb = emptyProb;
 	}
 
+	public function getFrontageLotArea():Float return minSq;
+
 	override public function createGeometry() {
 		var block = getCityBlock();
 		geometry = Ward.createAlleys( block, minSq, gridChaos, sizeChaos, emptyProb );

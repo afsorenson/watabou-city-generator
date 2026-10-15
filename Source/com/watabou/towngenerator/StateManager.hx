@@ -18,6 +18,7 @@ class StateManager {
 	public static var seed	: Int = -1;
 	public static var walls : Null<Bool> = null;
 	public static var footprints : Bool = false;
+	public static var blockFrontage : Bool = false;
 
 	public static function pullParams() {
 		#if html5
@@ -34,6 +35,7 @@ class StateManager {
 				default: null;
 			};
 			footprints = params.get( BUILDINGS ) == "footprints";
+			blockFrontage = params.get( BUILDINGS ) == "frontage";
 		}
 		#end
 	}
@@ -50,7 +52,8 @@ class StateManager {
 		params.set( SEED, Std.string( seed ) );
 		if (walls == null) params.delete_( WALLS );
 		else params.set( WALLS, walls ? "1" : "0" );
-		if (footprints) params.set( BUILDINGS, "footprints" );
+		if (blockFrontage) params.set( BUILDINGS, "frontage" );
+		else if (footprints) params.set( BUILDINGS, "footprints" );
 		else params.delete_( BUILDINGS );
 		var query:String = untyped params.toString();
 		var url = Browser.location.pathname + "?" + query + Browser.location.hash;

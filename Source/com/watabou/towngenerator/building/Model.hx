@@ -22,6 +22,9 @@ class Model {
 	public static var instance	: Model;
 	public var footprints : Bool;
 	public var footprintParcels : Array<Array<Polygon>> = [];
+	public var frontageBlocks : Array<Polygon> = [];
+	public var frontageCourtyards : Array<Polygon> = [];
+	public var frontageAccess : Array<Polygon> = [];
 
 	// Small Town	6
 	// Large Town	10
@@ -68,7 +71,7 @@ class Model {
 	public var streets	: Array<Street>;
 	public var roads	: Array<Street>;
 
-	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false ) {
+	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false, blockFrontageMode=false ) {
 
 		if (seed > 0) Random.reset( seed );
 		this.nPatches = nPatches != -1 ? nPatches : 15;
@@ -86,7 +89,8 @@ class Model {
 			trace( e.message );
 			instance = null;
 		} while (instance == null);
-		if (footprints) BuildingFootprints.apply( this, seed );
+		if (blockFrontageMode) BlockFrontage.apply( this, seed );
+		else if (footprints) BuildingFootprints.apply( this, seed );
 	}
 
 	private function build():Void {

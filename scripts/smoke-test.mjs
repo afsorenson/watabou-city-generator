@@ -121,6 +121,62 @@ async function checkFootprints(page) {
   return counts;
 }
 
+async function checkBlockRows(page) {
+  const preservesOutskirts = await page.evaluate(() => {
+    const model = window.__testModel;
+    if (!model.wall) return true;
+    const points = polygons => polygons.map(polygon => polygon.map(point => [point.x, point.y]));
+    return model.patches.every((patch, index) => patch.withinWalls
+      || JSON.stringify(points(patch.ward.geometry)) === JSON.stringify(points(model.footprintParcels[index])));
+  });
+  assert.ok(preservesOutskirts, 'Block Rows must preserve original outside-wall development');
+  const blocks = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.frontageBlocks.flatMap((block, index) => block.length ? [{
+      block: points(block),
+      courtyard: points(model.frontageCourtyards[index]),
+      access: points(model.frontageAccess[index]),
+      buildings: model.patches[index].ward.geometry.map(points),
+    }] : []);
+  });
+  assert.ok(blocks.length > 0, 'Block Rows must replace eligible blocks');
+  let buildingCount = 0;
+  const clippingArea = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+  const bounds = polygon => ({
+    minX: Math.min(...polygon.map(point => point[0])), maxX: Math.max(...polygon.map(point => point[0])),
+    minY: Math.min(...polygon.map(point => point[1])), maxY: Math.max(...polygon.map(point => point[1])),
+  });
+  for (const { block, courtyard, access, buildings } of blocks) {
+    const tolerance = polygonArea(block) * 1e-7;
+    assert.ok(polygonArea(courtyard) > 0, 'Rows must reserve a nonempty courtyard');
+    assert.ok(clippingArea(polygonClipping.intersection([courtyard], [access])) > 0,
+      'Access passage must reach the courtyard');
+    assert.ok(clippingArea(polygonClipping.difference([access], [block])) > tolerance,
+      'Access passage must cross the block boundary to reach the street');
+    const boxes = buildings.map(bounds);
+    for (let index = 0; index < buildings.length; index += 1) {
+      const building = buildings[index];
+      assert.ok(building.every(point => point.every(Number.isFinite)), 'Block buildings must have finite coordinates');
+      assert.ok(polygonArea(building) > 0, 'Block buildings must have positive area');
+      assert.ok(clippingArea(polygonClipping.difference([building], [block])) < tolerance,
+        'Block buildings must stay inside the city block');
+      assert.ok(clippingArea(polygonClipping.intersection([building], [courtyard])) < tolerance,
+        'Courtyard must remain clear of buildings');
+      assert.ok(clippingArea(polygonClipping.intersection([building], [access])) < tolerance,
+        'Access passage must remain clear of buildings');
+      for (let other = 0; other < index; other += 1) {
+        if (boxes[index].maxX < boxes[other].minX || boxes[other].maxX < boxes[index].minX
+          || boxes[index].maxY < boxes[other].minY || boxes[other].maxY < boxes[index].minY) continue;
+        assert.ok(clippingArea(polygonClipping.intersection([building], [buildings[other]])) < tolerance,
+          'Neighboring frontage plots must not overlap');
+      }
+    }
+    buildingCount += buildings.length;
+  }
+  return { blocks: blocks.length, buildings: buildingCount };
+}
+
 function pixelVariation(bytes) {
   const image = PNG.sync.read(bytes);
   let differing = 0;
@@ -307,6 +363,56 @@ try {
     assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
     await page.getByRole('button', { name: 'Generate a new city' }).click();
     assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
+  }
+  await page.setViewportSize({ width: 1200, height: 900 });
+  for (const [size, seed, walls] of [[6, 42, 0], [15, 682063530, 1], [40, 682063530, 1], [40, 123456, 0]]) {
+    const address = `${url}/?size=${size}&seed=${seed}&walls=${walls}`;
+    await capture(page, address);
+    const original = await geometryHash(page);
+    await page.getByLabel('Buildings', { exact: true }).selectOption('frontage');
+    assert.equal(await geometryHash(page, true), original, 'Block Rows must preserve base parcels, streets, and walls');
+    assert.notEqual(await geometryHash(page), original, 'Block Rows must replace building layout');
+    console.log(`PASS: size ${size} block rows: ${JSON.stringify(await checkBlockRows(page))}`);
+    const rows = await geometryHash(page);
+    await page.reload();
+    await page.waitForFunction(() => window.cityGenerator);
+    assert.equal(await geometryHash(page), rows, 'Block Rows must reproduce after reload');
+    assert.equal(await page.getByLabel('Buildings', { exact: true }).inputValue(), 'frontage');
+    await page.getByLabel('Buildings', { exact: true }).selectOption('footprints');
+    assert.equal(await geometryHash(page, true), original, 'Switching to Footprints must retain base geometry');
+    await checkFootprints(page);
+    await page.getByLabel('Buildings', { exact: true }).selectOption('original');
+    assert.equal(await geometryHash(page), original, 'Switching from Block Rows must restore Original exactly');
+  }
+  const rowsUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
+  await capture(page, rowsUrl, 'test-results/block-rows-desktop.png');
+  const rowsDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+  const rowsExport = await rowsDownload;
+  assert.equal(rowsExport.suggestedFilename(), 'city-40-682063530-walled-frontage.png');
+  await rowsExport.saveAs('test-results/block-rows-export.png');
+  const rowsBytes = await readFile('test-results/block-rows-export.png');
+  const rowsPng = PNG.sync.read(rowsBytes);
+  assert.equal(rowsPng.width, 2048);
+  assert.equal(rowsPng.height, 2048);
+  assert.ok(pixelVariation(rowsBytes) > 200000, 'Block Rows export must contain visible city detail');
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await capture(page, rowsUrl, `test-results/block-rows-mobile-${width}.png`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Block Rows controls must fit mobile width');
+    const toolbar = await page.locator('.toolbar').boundingBox();
+    const canvas = await page.locator('canvas').first().boundingBox();
+    assert.ok(canvas.y >= toolbar.y + toolbar.height - 1, 'Block Rows toolbar must not overlap the map');
+    await page.getByLabel('Walls', { exact: true }).uncheck();
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'frontage');
+    await page.getByLabel('City size', { exact: true }).fill('24');
+    await page.getByLabel('City size', { exact: true }).press('Tab');
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'frontage');
+    await page.getByRole('button', { name: 'Generate a new city' }).click();
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'frontage');
+    const mobileRowsDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    assert.match((await mobileRowsDownload).suggestedFilename(), /-frontage\.png$/);
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');

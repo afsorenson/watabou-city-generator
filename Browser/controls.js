@@ -7,7 +7,7 @@ const exportButton = document.querySelector('#export');
 document.addEventListener('city-ready', () => {
   sizeInput.value = window.cityGenerator.size;
   wallsInput.checked = window.cityGenerator.walls;
-  buildingsInput.value = window.cityGenerator.footprints ? 'footprints' : 'original';
+  buildingsInput.value = window.cityGenerator.blockFrontage ? 'frontage' : (window.cityGenerator.footprints ? 'footprints' : 'original');
   document.querySelector('#seed').textContent = window.cityGenerator.seed;
   for (const control of [sizeInput, wallsInput, buildingsInput, regenerateButton, exportButton]) control.disabled = false;
 });
@@ -15,13 +15,13 @@ document.addEventListener('city-ready', () => {
 function generate(newSeed) {
   if (!sizeInput.reportValidity()) return;
   const walls = new URLSearchParams(location.search).has('walls') ? wallsInput.checked : null;
-  window.cityGenerator.generate(Number(sizeInput.value), walls, newSeed, buildingsInput.value === 'footprints');
+  window.cityGenerator.generate(Number(sizeInput.value), walls, newSeed, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage');
 }
 
 sizeInput.addEventListener('change', () => generate(false));
 wallsInput.addEventListener('change', () => {
   if (!sizeInput.reportValidity()) return;
-  window.cityGenerator.generate(Number(sizeInput.value), wallsInput.checked, false, buildingsInput.value === 'footprints');
+  window.cityGenerator.generate(Number(sizeInput.value), wallsInput.checked, false, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage');
 });
 buildingsInput.addEventListener('change', () => generate(false));
 regenerateButton.addEventListener('click', () => generate(true));
