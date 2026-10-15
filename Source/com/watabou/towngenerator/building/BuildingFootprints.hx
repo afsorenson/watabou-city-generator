@@ -37,10 +37,14 @@ class BuildingFootprints {
 		return articulate( rectangle, variation );
 	}
 
-	public static function fromFrontagePlot( parcel:Polygon, block:Polygon, variation:Int, dense=false ):Array<Polygon> {
+	public static function fromFrontagePlot( parcel:Polygon, block:Polygon, variation:Int, dense=false, alignment:Point=null ):Array<Polygon> {
 		if (parcel.length < 3 || !parcel.isConvex() || parcel.square < 0.4) return [];
 		var rectangle = create( parcel, block, 9 );
 		if (rectangle == parcel || rectangle.length != 4 || rectangle.square < 0.3) return [];
+		if (alignment != null) {
+			var candidate = inscribed( parcel, parcel.centroid, alignment, true );
+			if (candidate.square >= rectangle.square * 0.9) rectangle = candidate;
+		}
 		var width = Point.distance( rectangle[0], rectangle[1] );
 		var depth = Point.distance( rectangle[1], rectangle[2] );
 		if (Math.min( width, depth ) < 0.35) return [];
@@ -119,7 +123,7 @@ class BuildingFootprints {
 		return result;
 	}
 
-	private static function inscribed( parcel:Polygon, center:Point, axis:Point ):Polygon {
+	private static function inscribed( parcel:Polygon, center:Point, axis:Point, refine=false ):Polygon {
 		var normal = new Point( -axis.y, axis.x );
 		var minSide = Math.POSITIVE_INFINITY;
 		var maxSide = Math.NEGATIVE_INFINITY;
@@ -153,7 +157,18 @@ class BuildingFootprints {
 		var bestDepth = 0.0;
 		var width = 0.0;
 		var depth = 0.0;
-		for (frontOffset in [0.0, 0.06, 0.12, 0.2]) {
+		if (refine) {
+			var centeredFit = 1.0;
+			for (constraint in constraints) {
+				var extent = Math.abs( constraint.side ) * spanWidth / 2 + Math.abs( constraint.depth ) * spanDepth / 2;
+				if (extent > 0) centeredFit = Math.min( centeredFit, Math.max( 0, constraint.clearance - setback ) / extent );
+			}
+			width = spanWidth * centeredFit / 2;
+			depth = spanDepth * centeredFit / 2;
+			bestScore = width * depth;
+		}
+		var offsets = refine ? [0.0, 0.01, 0.025, 0.06, 0.12, 0.2] : [0.0, 0.06, 0.12, 0.2];
+		for (frontOffset in offsets) {
 			var front = minDepth + setback + spanDepth * frontOffset;
 			for (depthStep in 0...14) {
 				var halfDepth = (spanDepth - setback * 2 - spanDepth * frontOffset) * (0.22 + depthStep * 0.06) / 2;
@@ -170,7 +185,7 @@ class BuildingFootprints {
 						else if (available < -0.000001) halfWidth = 0;
 					}
 					if (halfWidth <= 0) continue;
-					var score = halfWidth * halfDepth / (1 + frontOffset * 0.8);
+					var score = halfWidth * halfDepth / (refine ? 1 : (1 + frontOffset * 0.8));
 					if (score > bestScore) {
 						bestScore = score;
 						bestSide = sideCenter;

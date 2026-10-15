@@ -16,11 +16,13 @@ class BlockFrontage {
 		model.frontageLanes = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLanePaths = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLaneKinds = [for (patch in model.patches) new Array<String>()];
+		model.frontageTransitions = [for (patch in model.patches) null];
 		for (patchIndex in 0...model.patches.length) {
 			var patch = model.patches[patchIndex];
 			if (!patch.withinCity || !Std.is( patch.ward, CommonWard ) || patch.ward.geometry.length == 0) continue;
 			if (model.wall != null && !patch.withinWalls) continue;
 			var ward:CommonWard = cast patch.ward;
+			var transitions = new DistrictTransitions( model, patch );
 			var block = snap( ward.getCityBlock() );
 			if (block.length < 3 || block.square < 12) continue;
 			var center = block.centroid;
@@ -118,9 +120,16 @@ class BlockFrontage {
 					upper.reverse();
 					var cell = toWorld( new Polygon( lower.concat( upper ) ), center, axis );
 					if (right - left < 0.8 || back - front < 0.8) continue;
-					var count = Std.int( Math.max( 1, Math.round( (right - left) / lotWidth ) ) );
+					var cellCenter = toWorld( new Polygon( [new Point( (left + right) / 2, (front + back) / 2 )] ), center, axis )[0];
+					var localArea = transitions.sample( cellCenter ).area;
+					var lotRows = Std.int( Math.max( 1, Math.min( 4, Math.round( 2 * Math.sqrt( lotArea / localArea ) ) ) ) );
 					var split = 0.42 + (((seed ^ (row * 19349663) ^ (column * 73856093)) & 0x7fffffff) % 17) / 100;
-					for (lotRow in 0...2) {
+					var rowFractions = lotRows == 2 ? [0.0, split, 1.0] : [for (index in 0...lotRows + 1) index / lotRows];
+					for (lotRow in 0...lotRows) {
+						var rowCenter = toWorld( new Polygon( [new Point( (left + right) / 2,
+							front + (back - front) * (rowFractions[lotRow] + rowFractions[lotRow + 1]) / 2 )] ), center, axis )[0];
+						var rowWidth = Math.max( 1.2, Math.sqrt( transitions.sample( rowCenter ).area ) * 0.9 );
+						var count = Std.int( Math.max( 1, Math.round( (right - left) / rowWidth ) ) );
 						var weights = [for (index in 0...count) 0.72 +
 							(((seed ^ (patchIndex * 73856093) ^ (row * 15485863) ^ (column * 19349663) ^ (lotRow * 49979687) ^ (index * 83492791)) & 0x7fffffff) % 57) / 100];
 						var totalWeight = 0.0;
@@ -140,9 +149,8 @@ class BlockFrontage {
 							for (side in plotSides) {
 								var lowerDepth = profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : laneWidth / 2);
 								var upperDepth = profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : laneWidth / 2);
-								var separator = lowerDepth + (upperDepth - lowerDepth) * split;
-								plotFront = Math.max( plotFront, lotRow == 0 ? lowerDepth : separator );
-								plotBack = Math.min( plotBack, lotRow == 0 ? separator : upperDepth );
+								plotFront = Math.max( plotFront, lowerDepth + (upperDepth - lowerDepth) * rowFractions[lotRow] );
+								plotBack = Math.min( plotBack, lowerDepth + (upperDepth - lowerDepth) * rowFractions[lotRow + 1] );
 							}
 							plotFront += 0.035;
 							plotBack -= 0.035;
@@ -164,7 +172,7 @@ class BlockFrontage {
 							}
 							for (polygon in clipped) {
 								if (polygon.square < Math.max( 0.25, lotArea * 0.025 )) continue;
-								for (building in BuildingFootprints.fromFrontagePlot( polygon, lot, variation, true )) {
+									for (building in BuildingFootprints.fromFrontagePlot( polygon, lot, variation, true, transitions.alignmentAt( polygon.centroid ) )) {
 									buildings.push( building );
 									plots.push( polygon );
 								}
@@ -182,6 +190,7 @@ class BlockFrontage {
 			model.frontageLanes[patchIndex] = lanes;
 			model.frontageLanePaths[patchIndex] = paths;
 			model.frontageLaneKinds[patchIndex] = kinds;
+			model.frontageTransitions[patchIndex] = transitions;
 		}
 		#end
 	}

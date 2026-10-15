@@ -72,6 +72,122 @@ async function districtCoverage(page) {
   });
 }
 
+async function neighborhoodLaneHash(page) {
+  const snapshot = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return JSON.stringify({ lanes: model.frontageLanes.map(lanes => lanes.map(points)),
+      paths: model.frontageLanePaths.map(paths => paths.map(points)), kinds: model.frontageLaneKinds });
+  });
+  return createHash('sha256').update(snapshot).digest('hex');
+}
+
+async function checkDistrictTransitions(page) {
+  const result = await page.evaluate(() => {
+    const make = (baseArea, neighborArea, direction) => {
+      const context = Object.create(window.__testDistrictTransitions.prototype);
+      context.baseArea = baseArea;
+      context.range = 10;
+      context.borders = [{ start: new window.__testPoint(0, direction ? 0 : 20),
+        end: new window.__testPoint(0, direction ? 20 : 0), neighborArea, neighborIndex: 1 }];
+      return context;
+    };
+    const small = make(16, 100, true);
+    const large = make(100, 16, false);
+    const smallSamples = [0, 2.5, 5, 10, 20].map(distance => small.sample(new window.__testPoint(-distance, 10)).area);
+    const largeSamples = [0, 2.5, 5, 10, 20].map(distance => large.sample(new window.__testPoint(distance, 10)).area);
+    const noNeighbors = make(16, 100, true);
+    noNeighbors.borders = [];
+    const plot = [[0, 0], [12, 0], [12, 8], [0, 8]].map(point => new window.__testPoint(...point));
+    const direction = new window.__testPoint(1, 0.02);
+    direction.normalize(1);
+    const fitted = window.__testFrontageBuilding(plot, plot, 9, true, direction)[0];
+    const fittedSide = { x: fitted[1].x - fitted[0].x, y: fitted[1].y - fitted[0].y };
+    const alignmentError = Math.abs(fittedSide.x * direction.y - fittedSide.y * direction.x)
+      / Math.hypot(fittedSide.x, fittedSide.y);
+    let borders = 0;
+    let edgeAligned = 0;
+    for (let index = 0; index < window.__testModel.frontageTransitions.length; index += 1) {
+      const context = window.__testModel.frontageTransitions[index];
+      if (!context) continue;
+      borders += context.borders.length;
+      for (const border of context.borders) {
+        const sample = context.sample(new window.__testPoint((border.start.x + border.end.x) / 2,
+          (border.start.y + border.end.y) / 2));
+        const expected = Math.sqrt(context.baseArea * border.neighborArea);
+        if (Math.abs(sample.area - expected) > 1e-7 * expected) throw new Error('Shared-edge target must be the geometric mean');
+      }
+      for (const building of window.__testModel.patches[index].ward.geometry) {
+        const center = { x: building.reduce((sum, point) => sum + point.x, 0) / building.length,
+          y: building.reduce((sum, point) => sum + point.y, 0) / building.length };
+        const alignment = context.alignmentAt(new window.__testPoint(center.x, center.y));
+        if (!alignment) continue;
+        const side = { x: building[1].x - building[0].x, y: building[1].y - building[0].y };
+        const length = Math.hypot(side.x, side.y);
+        if (Math.abs(side.x * alignment.y - side.y * alignment.x) / length < 1e-6) edgeAligned += 1;
+      }
+    }
+    return { smallSamples, largeSamples, isolated: noNeighbors.sample(new window.__testPoint(0, 10)).area,
+      interiorAlignment: small.alignmentAt(new window.__testPoint(-20, 10)), alignmentError, borders, edgeAligned };
+  });
+  assert.ok(Math.abs(result.smallSamples[0] - 40) < 1e-7 && Math.abs(result.largeSamples[0] - 40) < 1e-7,
+    'Both sides must converge to the same shared street-edge scale');
+  assert.equal(result.smallSamples[3], 16);
+  assert.equal(result.smallSamples[4], 16);
+  assert.equal(result.largeSamples[3], 100);
+  assert.equal(result.largeSamples[4], 100);
+  for (let index = 1; index < result.smallSamples.length; index += 1) {
+    assert.ok(result.smallSamples[index] <= result.smallSamples[index - 1], 'Small-district blending must fade monotonically inward');
+    assert.ok(result.largeSamples[index] >= result.largeSamples[index - 1], 'Large-district blending must fade monotonically inward');
+  }
+  assert.equal(result.isolated, 16, 'Districts without eligible neighbors must retain their original scale');
+  assert.equal(result.interiorAlignment, null, 'District interiors must not be rotated by boundary alignment');
+  assert.ok(result.alignmentError < 1e-7, 'A compatible street-facing fit must use the requested shared-edge direction');
+  assert.ok(result.borders > 0, 'Test cities must have real shared district boundaries');
+  assert.ok(result.edgeAligned > 0, 'Boundary buildings must include street-aligned footprints');
+  return { borders: result.borders, edgeAligned: result.edgeAligned };
+}
+
+async function transitionGeometry(page) {
+  return page.evaluate(() => {
+    const model = window.__testModel;
+    return model.patches.map(patch => patch.ward.geometry.map(polygon => polygon.map(point => [point.x, point.y])));
+  });
+}
+
+async function sharedBoundaryPairs(page) {
+  return page.evaluate(() => window.__testModel.frontageTransitions.flatMap((context, index) => !context ? [] :
+    context.borders.filter(border => border.neighborIndex > index
+      && window.__testModel.frontageTransitions[border.neighborIndex]).map(border => ({
+      first: index, second: border.neighborIndex, start: [border.start.x, border.start.y],
+      end: [border.end.x, border.end.y], range: Math.min(context.range,
+        window.__testModel.frontageTransitions[border.neighborIndex].range),
+    }))));
+}
+
+function boundaryScaleContrast(geometry, borders) {
+  const rows = [];
+  for (const border of borders) {
+    const direction = [border.end[0] - border.start[0], border.end[1] - border.start[1]];
+    const lengthSquared = direction[0] ** 2 + direction[1] ** 2;
+    const means = [border.first, border.second].map(index => {
+      const nearby = geometry[index].filter(building => {
+        const center = building.reduce((sum, point) => [sum[0] + point[0] / building.length,
+          sum[1] + point[1] / building.length], [0, 0]);
+        const projection = ((center[0] - border.start[0]) * direction[0]
+          + (center[1] - border.start[1]) * direction[1]) / lengthSquared;
+        if (projection < 0.1 || projection > 0.9) return false;
+        return Math.abs(direction[0] * (center[1] - border.start[1])
+          - direction[1] * (center[0] - border.start[0])) / Math.sqrt(lengthSquared) < border.range * 0.55;
+      });
+      return nearby.length ? nearby.reduce((sum, building) => sum + polygonArea(building), 0) / nearby.length : null;
+    });
+    if (means.every(value => value > 0)) rows.push({ first: border.first, second: border.second,
+      contrast: Math.abs(Math.log(means[0] / means[1])), meanAreas: means });
+  }
+  return rows;
+}
+
 async function saveNeighborhood(bytes, path, left, top) {
   const image = PNG.sync.read(bytes);
   const crop = new PNG({ width: 600, height: 600 });
@@ -348,7 +464,11 @@ try {
     await route.fulfill({ response, body: source.replace(assignment,
       `${assignment} window.__testModel = this; window.__testPoint = openfl_geom_Point;
       window.__testFootprint = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
-        ? null : com_watabou_towngenerator_building_BuildingFootprints.create;`) });
+        ? null : com_watabou_towngenerator_building_BuildingFootprints.create;
+      window.__testDistrictTransitions = typeof com_watabou_towngenerator_building_DistrictTransitions === 'undefined'
+        ? null : com_watabou_towngenerator_building_DistrictTransitions;
+      window.__testFrontageBuilding = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
+        ? null : com_watabou_towngenerator_building_BuildingFootprints.fromFrontagePlot;`) });
   });
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
@@ -506,6 +626,39 @@ try {
     console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
     console.log(`PASS: neighborhood topology: ${JSON.stringify(topology)}`);
     const after = await districtCoverage(page);
+    const transitions = await checkDistrictTransitions(page);
+    const lanesBeforeReference = await neighborhoodLaneHash(page);
+    const afterGeometry = await transitionGeometry(page);
+    const boundaryPairs = await sharedBoundaryPairs(page);
+    const transitionReference = await startServer({ root: resolve('.toolchain/transitions-reference'), port: 0 });
+    try {
+      await capture(page, `${transitionReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
+        `test-results/transitions-before-${size}-${seed}.png`);
+      assert.equal(await neighborhoodLaneHash(page), lanesBeforeReference, 'District transitions must not alter neighborhood lanes or junctions');
+      const beforeContrast = boundaryScaleContrast(await transitionGeometry(page), boundaryPairs);
+      const afterContrast = boundaryScaleContrast(afterGeometry, boundaryPairs);
+      const pairs = afterContrast.flatMap(pair => {
+        const previous = beforeContrast.find(candidate => candidate.first === pair.first && candidate.second === pair.second);
+        return previous ? [{ before: previous, after: pair }] : [];
+      });
+      const oldMean = pairs.reduce((sum, pair) => sum + pair.before.contrast, 0) / pairs.length;
+      const newMean = pairs.reduce((sum, pair) => sum + pair.after.contrast, 0) / pairs.length;
+      assert.ok(pairs.length > 0 && Number.isFinite(oldMean) && Number.isFinite(newMean),
+        'Transition comparison must measure actual paired boundary frontages');
+      assert.ok(newMean < oldMean * 0.95, 'District blending must reduce measured boundary building-size contrast');
+      await writeFile(`test-results/transitions-${size}-${seed}.json`, JSON.stringify({ size, seed, walls,
+        transitions, oldMean, newMean, boundaries: pairs }, null, 2));
+      console.log(`PASS: district contexts ${JSON.stringify(transitions)}, measured boundary contrast ${oldMean.toFixed(3)} -> ${newMean.toFixed(3)}`);
+      if (size === 40 && walls === 1) {
+        const previousDownload = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        await (await previousDownload).saveAs('test-results/transitions-before-export.png');
+        await saveNeighborhood(await readFile('test-results/transitions-before-export.png'),
+          'test-results/transitions-before-neighborhood.png', 500, 450);
+      }
+    } finally {
+      await new Promise(resolveClose => transitionReference.server.close(resolveClose));
+    }
     const topologyReference = await startServer({ root: resolve('.toolchain/topology-reference'), port: 0 });
     try {
       await capture(page, `${topologyReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
@@ -587,6 +740,7 @@ try {
   const rowsBytes = await readFile('test-results/block-rows-export.png');
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/topology-after-neighborhood.png', 500, 450);
+  await saveNeighborhood(rowsBytes, 'test-results/transitions-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-south.png', 750, 1100);
   const rowsPng = PNG.sync.read(rowsBytes);
   assert.equal(rowsPng.width, 2048);

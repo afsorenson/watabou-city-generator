@@ -97,6 +97,16 @@ Groups contain back-to-back building rows,
 not a universal hollow perimeter. Only selected larger districts reserve a small
 lane-connected courtyard.
 
+Along shared boundaries between eligible residential/commercial districts, target
+lot sizes blend toward the geometric mean of the two districts' original lot areas.
+The effect fades over roughly 2.5 original building widths; locations outside that
+band retain their original district scale. Row counts and frontage widths follow
+the local target rather than changing the entire district. Compatible boundary
+buildings can align to the shared street edge, but a rotated fit is accepted only
+when it retains at least 90% of the original fit area. Neighborhood lane geometry
+is unchanged by this transition pass. Parks, landmarks, and opposite sides of the
+city wall are excluded from the blend.
+
 Plots are clipped to block boundaries and fitted with distinct rectangular,
 L-shaped, or stepped footprints. Denser fitting avoids repeatedly shrinking lots
 into tiny buildings. Unsafe tiny or concave boundary lots are omitted rather than
@@ -129,7 +139,7 @@ Block Rows filenames end in `-frontage.png`.
 
 Prioritized follow-ups after neighborhood street topology:
 
-- [ ] **Soften district transitions.** Use shared street context to blend building
+- [x] **Soften district transitions (first pass).** Use shared street context to blend building
 	scale, orientation, and density near boundaries without erasing district identity.
 - [ ] **Vary building grouping.** Mix short attached frontages, detached buildings,
 	corner buildings, and small rear structures instead of uniformly isolated plots.
@@ -182,6 +192,13 @@ short connectors, clear lanes, and connectivity from active lanes to block-bound
 routes. `topology-*.json` records coverage and topology measurements, while
 `topology-before-neighborhood.png` and `topology-after-neighborhood.png` provide
 matching visual crops.
+The pre-transition version (`f625b1f`) verifies that neighborhood lane geometry is
+identical. Transition checks cover reciprocal shared-edge targets, monotonic inward
+fade, isolated districts, compatible street-facing alignment, and actual building
+area contrast across paired boundary frontages. Fixed fixtures show approximately
+25-31% lower mean absolute log-area contrast, not a universal visual-similarity
+guarantee. `transitions-*.json` records those measurements; matching crops are
+`transitions-before-neighborhood.png` and `transitions-after-neighborhood.png`.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 

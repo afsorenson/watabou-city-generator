@@ -29,6 +29,7 @@ class Model {
 	public var frontageLanes : Array<Array<Polygon>> = [];
 	public var frontageLanePaths : Array<Array<Polygon>> = [];
 	public var frontageLaneKinds : Array<Array<String>> = [];
+	public var frontageTransitions : Array<DistrictTransitions> = [];
 
 	// Small Town	6
 	// Large Town	10

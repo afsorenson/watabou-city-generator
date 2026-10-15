@@ -31,4 +31,13 @@ cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
 cp -R Export/html5/bin/. "$ROOT/.toolchain/topology-reference/"
+cd "$ROOT"
+mkdir -p .toolchain/transitions-reference-source .toolchain/transitions-reference
+git archive f625b1f | tar -x -C .toolchain/transitions-reference-source
+cd .toolchain/transitions-reference-source
+haxelib run lime build html5
+cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
+cp -R Export/html5/bin/. "$ROOT/.toolchain/transitions-reference/"
 printf 'Built untouched upstream reference.\n'
