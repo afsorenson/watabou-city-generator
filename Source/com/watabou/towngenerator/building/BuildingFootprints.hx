@@ -37,7 +37,7 @@ class BuildingFootprints {
 		return articulate( rectangle, variation );
 	}
 
-	public static function fromFrontagePlot( parcel:Polygon, block:Polygon, variation:Int ):Array<Polygon> {
+	public static function fromFrontagePlot( parcel:Polygon, block:Polygon, variation:Int, dense=false ):Array<Polygon> {
 		if (parcel.length < 3 || !parcel.isConvex() || parcel.square < 0.4) return [];
 		var rectangle = create( parcel, block, 9 );
 		if (rectangle == parcel || rectangle.length != 4 || rectangle.square < 0.3) return [];
@@ -46,13 +46,13 @@ class BuildingFootprints {
 		if (Math.min( width, depth ) < 0.35) return [];
 		var side = rectangle[1].subtract( rectangle[0] );
 		var inward = rectangle[3].subtract( rectangle[0] );
-		var count = depth > width * 2.6 && depth > 4 ? 2 : 1;
+		var count = !dense && depth > width * 2.6 && depth > 4 ? 2 : 1;
 		var buildings:Array<Polygon> = [];
 		for (buildingIndex in 0...count) {
 			var detail = (variation ^ (buildingIndex * 83492791)) & 0x7fffffff;
-			var sideInset = 0.015 + (detail % 6) / 100;
+			var sideInset = dense ? 0.01 + (detail % 4) / 200 : 0.015 + (detail % 6) / 100;
 			var front = buildingIndex == 0 ? 0.0 : 0.5 + Math.min( 0.12, 0.45 / depth );
-			var back = count == 1 ? 0.76 + ((detail >>> 4) % 22) / 100 :
+			var back = count == 1 ? (dense ? 0.93 + ((detail >>> 4) % 6) / 100 : 0.76 + ((detail >>> 4) % 22) / 100) :
 				(buildingIndex == 0 ? 0.47 : 0.86 + ((detail >>> 4) % 12) / 100);
 			var outline = new Polygon( [for (corner in [new Point( sideInset, front ), new Point( 1 - sideInset, front ),
 				new Point( 1 - sideInset, back ), new Point( sideInset, back )]) new Point(

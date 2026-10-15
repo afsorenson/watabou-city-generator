@@ -86,29 +86,31 @@ Concave or degenerate parcels, castles, landmarks, parks, and farms retain their
 original geometry. This is a parcel-based frontage improvement, not the current
 Watabou implementation or a simulation of shared walls, access, and courtyards.
 
-**Block Rows** is a separate experimental alternative. It replaces eligible convex
-residential/commercial blocks with coordinated street-edge rows, using the district's
-original lot-area setting to size frontages. Larger blocks receive deeper rows.
-A central courtyard and one street-to-courtyard passage remain clear. Frontage
-plots are clipped to separate edge-owned sectors, then fitted with distinct inset
-building footprints rather than drawn directly. Buildings have seeded width/depth
-variation and rectangular, L-shaped, or stepped outlines. Deep plots may contain
-separate front and rear buildings with a clear gap. Tiny or concave clipped plots
-that cannot safely contain an orthogonal footprint are omitted rather than rendered
-as wedges. The courtyard layout remains unchanged in this footprint refinement.
-Neighboring buildings do not overlap. The clipping engine is bundled
-locally; this mode does not need an online service.
+**Block Rows** is a separate experimental alternative. Eligible residential and
+commercial blocks are subdivided into smaller building groups with narrow secondary
+lanes. Lot sizes follow the district's original lot-area setting; widths, row depths,
+and lane spacing vary deterministically. Groups contain back-to-back building rows,
+not a universal hollow perimeter. Only selected larger districts reserve a small
+lane-connected courtyard.
+
+Plots are clipped to block boundaries and fitted with distinct rectangular,
+L-shaped, or stepped footprints. Denser fitting avoids repeatedly shrinking lots
+into tiny buildings. Unsafe tiny or concave boundary lots are omitted rather than
+drawn as wedges, and blocks with too few usable buildings retain their original
+geometry. Buildings do not overlap, and secondary lanes stay clear. The clipping
+engine is bundled locally; this mode does not need an online service.
 
 ```text
 http://127.0.0.1:8788/?size=40&seed=682063530&walls=1&buildings=frontage
 ```
 
-Original outside-wall development, concave/tiny blocks, landmarks, parks, farms,
+Original outside-wall development, unsuitable/tiny blocks, landmarks, parks, farms,
 and castles are retained. Streets, perimeter walls, and the underlying original
 parcels stay unchanged. The original random sequence is not consumed. Switching
 back to Original or Footprints restores that mode at the same seed. This is an
-experimental perimeter-row layout, not a reproduction of modern Watabou algorithms
-or a full simulation of plot ownership and shared walls.
+experimental subdivision layout, not a reproduction of modern Watabou algorithms
+or a full simulation of plot ownership and shared walls. It remains more regular
+than the current Watabou reference despite the seeded dimensional variation.
 
 The view and **Export PNG** use the same city-focused boundary: city patches
 and the castle, with an 8% margin for adjacent development. Distant farms and
@@ -138,10 +140,17 @@ They also build the first footprint version (`291272b`) for same-seed occupied-a
 comparisons, and check a tapered parcel's front setback and long-edge fallback
 orientation. These checks measure the tested cities, not a universal density gain.
 Block Rows checks cover owning-plot and block containment, distinct inset footprints,
-orthogonal corners, articulated shapes, separate rear buildings, pairwise building nonoverlap, clear
-courtyards, clear street-to-courtyard passages, preserved outside-wall development,
+orthogonal corners, articulated shapes, pairwise building nonoverlap, selective
+courtyard sizing, clear secondary lanes, preserved outside-wall development,
 deterministic mode switching, and desktop/mobile PNG exports across several sizes
 and seeds, including cities with and without perimeter walls.
+The pre-subdivision version (`5f324c0`) is built for matching-seed comparisons.
+Per-district area and coverage reports are written to `test-results/coverage-*.json`.
+The fixed fixtures measure roughly 35-37% to 64-66% building coverage in shared
+districts; those figures are regression measurements, not a universal guarantee.
+Matching 600-pixel crops are saved as `coverage-before-neighborhood.png`,
+`coverage-after-neighborhood.png`, `coverage-before-south.png`, and
+`coverage-after-south.png` for visual comparison, not just numerical validation.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 

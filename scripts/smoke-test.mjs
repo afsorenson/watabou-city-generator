@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
@@ -52,6 +52,31 @@ async function buildingArea(page) {
   const polygons = await page.evaluate(() => window.__testModel.patches.flatMap(
     patch => patch.ward.geometry.map(polygon => polygon.map(point => [point.x, point.y]))));
   return polygons.reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+}
+
+async function districtCoverage(page) {
+  const districts = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.frontageBlocks.flatMap((block, index) => block.length ? [{
+      index, name: model.patches[index].ward.getLabel(), block: points(block),
+      courtyard: points(model.frontageCourtyards[index]),
+      buildings: model.patches[index].ward.geometry.map(points),
+    }] : []);
+  });
+  return districts.map(district => {
+    const area = polygonArea(district.block);
+    const buildingArea = district.buildings.reduce((sum, building) => sum + polygonArea(building), 0);
+    return { index: district.index, name: district.name, area, buildingArea,
+      coverage: buildingArea / area, courtyardArea: polygonArea(district.courtyard) };
+  });
+}
+
+async function saveNeighborhood(bytes, path, left, top) {
+  const image = PNG.sync.read(bytes);
+  const crop = new PNG({ width: 600, height: 600 });
+  PNG.bitblt(image, crop, left, top, 600, 600, 0, 0);
+  await writeFile(path, PNG.sync.write(crop));
 }
 
 async function checkFrontage(page) {
@@ -138,6 +163,7 @@ async function checkBlockRows(page) {
       courtyard: points(model.frontageCourtyards[index]),
       access: points(model.frontageAccess[index]),
       plots: model.frontagePlots[index].map(points),
+      lanes: model.frontageLanes[index].map(points),
       buildings: model.patches[index].ward.geometry.map(points),
     }] : []);
   });
@@ -145,18 +171,27 @@ async function checkBlockRows(page) {
   let buildingCount = 0;
   let articulated = 0;
   let rearBuildings = 0;
+  let courtCount = 0;
+  let coveredArea = 0;
+  let blockArea = 0;
   const clippingArea = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
   const bounds = polygon => ({
     minX: Math.min(...polygon.map(point => point[0])), maxX: Math.max(...polygon.map(point => point[0])),
     minY: Math.min(...polygon.map(point => point[1])), maxY: Math.max(...polygon.map(point => point[1])),
   });
-  for (const { block, courtyard, access, plots, buildings } of blocks) {
+  for (const { block, courtyard, access, plots, lanes, buildings } of blocks) {
     const tolerance = polygonArea(block) * 1e-7;
+    blockArea += polygonArea(block);
+    coveredArea += buildings.reduce((sum, building) => sum + polygonArea(building), 0);
     assert.equal(plots.length, buildings.length, 'Every block-row building must retain its owning plot');
     rearBuildings += plots.length - new Set(plots.map(plot => JSON.stringify(plot))).size;
-    assert.ok(polygonArea(courtyard) > 0, 'Rows must reserve a nonempty courtyard');
-    assert.ok(clippingArea(polygonClipping.intersection([courtyard], [access])) > 0,
-      'Access passage must reach the courtyard');
+    assert.ok(lanes.length > 0, 'Subdivided blocks must reserve secondary lanes');
+    if (courtyard.length) {
+      courtCount += 1;
+      assert.ok(polygonArea(courtyard) < polygonArea(block) * 0.2, 'Selective courtyards must not dominate their block');
+      assert.ok(clippingArea(polygonClipping.intersection([courtyard], [access])) > 0,
+        'Access lane must reach the optional courtyard');
+    }
     assert.ok(clippingArea(polygonClipping.difference([access], [block])) > tolerance,
       'Access passage must cross the block boundary to reach the street');
     const boxes = buildings.map(bounds);
@@ -182,10 +217,14 @@ async function checkBlockRows(page) {
       }
       assert.ok(clippingArea(polygonClipping.difference([building], [block])) < tolerance,
         'Block buildings must stay inside the city block');
-      assert.ok(clippingArea(polygonClipping.intersection([building], [courtyard])) < tolerance,
-        'Courtyard must remain clear of buildings');
+      if (courtyard.length) assert.ok(clippingArea(polygonClipping.intersection([building], [courtyard])) < tolerance,
+        'Optional courtyard must remain clear of buildings');
       assert.ok(clippingArea(polygonClipping.intersection([building], [access])) < tolerance,
         'Access passage must remain clear of buildings');
+      for (const lane of lanes) {
+        assert.ok(clippingArea(polygonClipping.intersection([building], [lane])) < tolerance,
+          'Secondary lanes must remain clear of buildings');
+      }
       for (let other = 0; other < index; other += 1) {
         if (boxes[index].maxX < boxes[other].minX || boxes[other].maxX < boxes[index].minX
           || boxes[index].maxY < boxes[other].minY || boxes[other].maxY < boxes[index].minY) continue;
@@ -195,7 +234,11 @@ async function checkBlockRows(page) {
     }
     buildingCount += buildings.length;
   }
-  return { blocks: blocks.length, buildings: buildingCount, articulated, rearBuildings };
+  assert.ok(courtCount < blocks.length, 'Courtyards must be selective rather than universal');
+  const coverage = coveredArea / blockArea;
+  assert.ok(coverage > 0.35, 'Regenerated districts must retain substantial building coverage');
+  return { blocks: blocks.length, buildings: buildingCount, articulated, rearBuildings, courtyards: courtCount,
+    coverage: Number(coverage.toFixed(3)) };
 }
 
 function pixelVariation(bytes) {
@@ -395,8 +438,41 @@ try {
     assert.notEqual(await geometryHash(page), original, 'Block Rows must replace building layout');
     const blockStats = await checkBlockRows(page);
     assert.ok(blockStats.articulated > 0, 'Test cities must include distinct L-shaped or stepped block buildings');
-    assert.ok(blockStats.rearBuildings > 0, 'Deep plots must support separate front and rear buildings');
     console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
+    const after = await districtCoverage(page);
+    const reference = await startServer({ root: resolve('.toolchain/coverage-reference'), port: 0 });
+    try {
+      await capture(page, `${reference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
+        `test-results/coverage-before-${size}-${seed}.png`);
+      const before = await districtCoverage(page);
+      const shared = after.flatMap(district => {
+        const previous = before.find(candidate => candidate.index === district.index);
+        return previous ? [{ before: previous, after: district }] : [];
+      });
+      assert.ok(shared.length > 0, 'Density comparison must use matching districts');
+      const area = shared.reduce((sum, pair) => sum + pair.after.area, 0);
+      const oldCoverage = shared.reduce((sum, pair) => sum + pair.before.buildingArea, 0) / area;
+      const newCoverage = shared.reduce((sum, pair) => sum + pair.after.buildingArea, 0) / area;
+      assert.ok(newCoverage > oldCoverage * 1.2, 'Interior subdivision must improve same-district coverage');
+      assert.ok(shared.filter(pair => pair.after.courtyardArea > 0).length
+        < shared.filter(pair => pair.before.courtyardArea > 0).length,
+      'Interior subdivision must reduce universal courtyard layouts');
+      await writeFile(`test-results/coverage-${size}-${seed}.json`, JSON.stringify({ size, seed, walls,
+        oldCoverage, newCoverage, districts: shared }, null, 2));
+      console.log(`PASS: matching districts coverage ${(oldCoverage * 100).toFixed(1)}% -> ${(newCoverage * 100).toFixed(1)}%`);
+      if (size === 40 && walls === 1) {
+        const previousDownload = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        const previousExport = await previousDownload;
+        await previousExport.saveAs('test-results/coverage-before-export.png');
+        const bytes = await readFile('test-results/coverage-before-export.png');
+        await saveNeighborhood(bytes, 'test-results/coverage-before-neighborhood.png', 500, 450);
+        await saveNeighborhood(bytes, 'test-results/coverage-before-south.png', 750, 1100);
+      }
+    } finally {
+      await new Promise(resolveClose => reference.server.close(resolveClose));
+    }
+    await capture(page, `${address}&buildings=frontage`, `test-results/coverage-after-${size}-${seed}.png`);
     const rows = await geometryHash(page);
     await page.reload();
     await page.waitForFunction(() => window.cityGenerator);
@@ -416,6 +492,8 @@ try {
   assert.equal(rowsExport.suggestedFilename(), 'city-40-682063530-walled-frontage.png');
   await rowsExport.saveAs('test-results/block-rows-export.png');
   const rowsBytes = await readFile('test-results/block-rows-export.png');
+  await saveNeighborhood(rowsBytes, 'test-results/coverage-after-neighborhood.png', 500, 450);
+  await saveNeighborhood(rowsBytes, 'test-results/coverage-after-south.png', 750, 1100);
   const rowsPng = PNG.sync.read(rowsBytes);
   assert.equal(rowsPng.width, 2048);
   assert.equal(rowsPng.height, 2048);

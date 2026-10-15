@@ -13,4 +13,13 @@ git archive 291272b | tar -x -C .toolchain/footprints-reference-source
 cd .toolchain/footprints-reference-source
 haxelib run lime build html5
 cp -R Export/html5/bin/. "$ROOT/.toolchain/footprints-reference/"
+cd "$ROOT"
+mkdir -p .toolchain/coverage-reference-source .toolchain/coverage-reference
+git archive 5f324c0 | tar -x -C .toolchain/coverage-reference-source
+cd .toolchain/coverage-reference-source
+haxelib run lime build html5
+cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
+cp -R Export/html5/bin/. "$ROOT/.toolchain/coverage-reference/"
 printf 'Built untouched upstream reference.\n'
