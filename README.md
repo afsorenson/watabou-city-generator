@@ -3,8 +3,9 @@
 ## Local Mac Fork
 
 This fork runs Watabou's older open-source engine locally on macOS. It is not
-the current hosted generator. The original generation and map-rendering code
-is unchanged; the fork adds a local launcher and a PNG export button.
+the current hosted generator. It retains the original building and street
+generation, with monochrome presentation, city-focused framing, optional city
+walls, a local launcher, and PNG export.
 Coastline constraints and background-image import are not implemented yet.
 
 ### Run On This Mac
@@ -46,16 +47,27 @@ library paths are absolute.
 
 ### Generate And Export
 
-Choose one of the four city-size buttons to generate a city. Seed and size
-are stored in the URL, for example:
+Set **City size** from 6 to 40 (the original engine's patch count). New sessions
+default to 40 for a large-city comparison. Change size to rebuild at the current
+seed, or choose **Generate** for a new seed. **Walls** controls the city perimeter;
+castles can remain individually fortified even with city walls off.
+
+Size, seed, and explicit wall choices are stored in the URL, for example:
 
 ```text
-http://127.0.0.1:8788/?size=15&seed=682063530
+http://127.0.0.1:8788/?size=40&seed=682063530&walls=1
 ```
 
-Bookmark a URL to reproduce its city. **Export PNG** downloads a 2048 x 2048
-image containing the full map, including outlying roads and farms, without UI
-controls. This intentionally includes more terrain than the on-screen crop.
+Bookmark a URL to reproduce its city. `walls=1` enables city walls and `walls=0`
+disables them. URLs without `walls` retain the original engine's seeded random
+wall choice. Changing size preserves this automatic behavior until you explicitly
+toggle the checkbox. Changing either setting keeps the seed.
+
+The view and **Export PNG** use the same city-focused boundary: city patches
+and the castle, with an 8% margin for adjacent development. Distant farms and
+approach roads are cropped, not removed from the generated model. Exports remain
+2048 x 2048 with an additional 64-pixel minimum outer margin and no UI controls.
+Ground and streets are white, buildings gray, and outlines and walls black.
 
 ### Verification And Provenance
 
@@ -66,10 +78,11 @@ npm test
 
 Tests use installed Google Chrome; set `CHROME_PATH` for another Chrome location.
 They build the untouched upstream commit
-`7fbc87a9398cc508af24de93f79cf2ad027f352b` as a reference, compare map pixels
-outside the controls at a fixed seed, check seed repeatability and different
-seeds, exercise regeneration, render desktop/mobile views, and decode the
-downloaded PNG. Screenshots and an example export go into ignored
+`7fbc87a9398cc508af24de93f79cf2ad027f352b` as a reference and compare building,
+street, road, and perimeter-wall geometry at three sizes without wall overrides.
+Presentation pixels intentionally differ. Tests also check seed repeatability,
+wall overrides and reloads, size changes and regeneration, desktop/mobile layout,
+and the decoded monochrome PNG. Screenshots and an example export go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 
 The original GPL-3.0 license is preserved in `LICENSE`. Upstream history is

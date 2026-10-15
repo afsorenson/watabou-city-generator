@@ -14,6 +14,7 @@ class Palette {
 		this.dark	= dark;
 	}
 
+	public static var MONOCHROME = new Palette( 0xffffff, 0x999999, 0xffffff, 0x000000 );
 	public static var DEFAULT	= new Palette( 0xccc5b8, 0x99948a, 0x67635c, 0x1a1917 );
 	public static var BLUEPRINT	= new Palette( 0x455b8d, 0x7383aa, 0xa1abc6, 0xfcfbff );
 	public static var BW		= new Palette( 0xffffff, 0xcccccc, 0x888888, 0x000000 );

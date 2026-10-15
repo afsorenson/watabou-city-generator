@@ -11,9 +11,11 @@ class StateManager {
 
 	private static inline var SIZE = "size";
 	private static inline var SEED = "seed";
+	private static inline var WALLS = "walls";
 
-	public static var size	: Int = 15;
+	public static var size	: Int = 40;
 	public static var seed	: Int = -1;
+	public static var walls : Null<Bool> = null;
 
 	public static function pullParams() {
 		#if html5
@@ -24,6 +26,11 @@ class StateManager {
 
 			var seed1 = Std.parseInt( params.get( SEED ) );
 			if (seed1 != null) seed = (seed1 > 0 ? seed1 : -1);
+			walls = switch (params.get( WALLS )) {
+				case "1": true;
+				case "0": false;
+				default: null;
+			};
 		}
 		#end
 	}
@@ -35,12 +42,14 @@ class StateManager {
 		}
 
 		#if html5
-		var loc = Browser.location;
-		var search1 = loc.search;
-		var search2 = '?$SIZE=$size&$SEED=$seed';
-		// The next line is not entirely correct, it doesn't take into account hashes
-		var url = search1 != "" ? loc.href.split( search1 ).join( search2 ) : loc.href + search2;
-		Browser.window.history.replaceState( {size: size, seed: seed}, getStateName(), url );
+		var params = new URLSearchParams( Browser.location.search );
+		params.set( SIZE, Std.string( size ) );
+		params.set( SEED, Std.string( seed ) );
+		if (walls == null) params.delete_( WALLS );
+		else params.set( WALLS, walls ? "1" : "0" );
+		var query:String = untyped params.toString();
+		var url = Browser.location.pathname + "?" + query + Browser.location.hash;
+		Browser.window.history.replaceState( {size: size, seed: seed, walls: walls}, getStateName(), url );
 		#end
 	}
 

@@ -2,8 +2,10 @@ package com.watabou.towngenerator;
 
 import openfl.display.BitmapData;
 import openfl.display.PNGEncoderOptions;
+import openfl.display.Shape;
 import openfl.display.Sprite;
 import openfl.geom.Matrix;
+import openfl.geom.Rectangle;
 import openfl.net.FileReference;
 import openfl.utils.ByteArray;
 
@@ -19,18 +21,25 @@ class TownScene extends Scene {
 
 	private var buttons	: Sprite;
 	private var map		: CityMap;
+	private var mapMask : Shape;
 
 	public function new() {
 		super();
 
 		map = new CityMap( Model.instance );
 		addChild( map );
+		mapMask = new Shape();
+		addChild( mapMask );
+		map.mask = mapMask;
 
 		addChild( new Tooltip() );
 
 		buttons = new Sprite();
 		addChild( buttons );
 
+		#if html5
+		BrowserControls.bind( exportPng );
+		#else
 		var smallTown = new CitySizeButton( "Small Town", 6, 10 );
 		var largeTown = new CitySizeButton( "Large Town", 10, 15 );
 		var smallCity = new CitySizeButton( "Small City", 15, 24 );
@@ -44,23 +53,29 @@ class TownScene extends Scene {
 			pos += btn.height + 1;
 			buttons.addChild( btn );
 		}
+		#end
 	}
 
 	private function exportPng():Void {
 		var resolution = 2048;
 		var padding = 64;
-		var bounds = map.getBounds( map );
+		var bounds = map.getCityBounds();
 		var exportScale = (resolution - padding * 2) / Math.max( bounds.width, bounds.height );
 		var transform = new Matrix( exportScale, 0, 0, exportScale,
 			resolution / 2 - (bounds.x + bounds.width / 2) * exportScale,
 			resolution / 2 - (bounds.y + bounds.height / 2) * exportScale );
 		var image = new BitmapData( resolution, resolution, false, CityMap.palette.paper );
-		image.draw( map, transform, null, null, null, true );
+		var clip = new Rectangle( (resolution - bounds.width * exportScale) / 2,
+			(resolution - bounds.height * exportScale) / 2,
+			bounds.width * exportScale, bounds.height * exportScale );
+		map.mask = null;
+		image.draw( map, transform, null, null, clip, true );
+		map.mask = mapMask;
 		var png = image.encode( image.rect, new PNGEncoderOptions() );
 		image.dispose();
 		var bytes:haxe.io.Bytes = png;
 		new FileReference().save( ByteArray.fromBytes( bytes.sub( 0, png.length ) ),
-			'city-${StateManager.size}-${StateManager.seed}.png' );
+			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}.png' );
 	}
 
 	private var scale(get,set) : Float;
@@ -70,14 +85,15 @@ class TownScene extends Scene {
 		return (map.scaleX = map.scaleY = value);
 
 	override public function layout():Void {
-		map.x = rWidth / 2;
-		map.y = rHeight / 2;
-
-		var scaleX = rWidth / Model.instance.cityRadius;
-		var scaleY = rHeight / Model.instance.cityRadius;
-		var scMin = Math.min( scaleX, scaleY );
-		var scMax = Math.max( scaleX, scaleY );
-		scale = (scMax / scMin > 2 ? scMax / 2 : scMin) * 0.5;
+		var bounds = map.getCityBounds();
+		scale = Math.min( rWidth / bounds.width, rHeight / bounds.height );
+		map.x = rWidth / 2 - (bounds.x + bounds.width / 2) * scale;
+		map.y = rHeight / 2 - (bounds.y + bounds.height / 2) * scale;
+		mapMask.graphics.clear();
+		mapMask.graphics.beginFill( 0xffffff );
+		mapMask.graphics.drawRect( map.x + bounds.x * scale, map.y + bounds.y * scale,
+			bounds.width * scale, bounds.height * scale );
+		mapMask.graphics.endFill();
 
 		buttons.x = rWidth - buttons.width - 1;
 		buttons.y = 1;

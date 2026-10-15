@@ -5,6 +5,7 @@ import openfl.display.CapsStyle;
 import openfl.display.Graphics;
 import openfl.display.Sprite;
 import openfl.geom.Point;
+import openfl.geom.Rectangle;
 
 import com.watabou.geom.Polygon;
 
@@ -18,7 +19,7 @@ using com.watabou.utils.PointExtender;
 
 class CityMap extends Sprite {
 
-	public static var palette = Palette.DEFAULT;
+	public static var palette = Palette.MONOCHROME;
 
 	private var patches	: Array<PatchView>;
 
@@ -76,6 +77,26 @@ class CityMap extends Sprite {
 
 		if (model.citadel != null)
 			drawWall( walls.graphics, cast( model.citadel.ward, Castle).wall, true );
+	}
+
+	public function getCityBounds():Rectangle {
+		var minX = Math.POSITIVE_INFINITY;
+		var minY = Math.POSITIVE_INFINITY;
+		var maxX = Math.NEGATIVE_INFINITY;
+		var maxY = Math.NEGATIVE_INFINITY;
+		for (patch in Model.instance.patches) {
+			if (!patch.withinCity) continue;
+			for (point in patch.shape) {
+				minX = Math.min( minX, point.x );
+				minY = Math.min( minY, point.y );
+				maxX = Math.max( maxX, point.x );
+				maxY = Math.max( maxY, point.y );
+			}
+		}
+		var bounds = new Rectangle( minX, minY, maxX - minX, maxY - minY );
+		var margin = Math.max( bounds.width, bounds.height ) * 0.08;
+		bounds.inflate( margin, margin );
+		return bounds;
 	}
 
 	private function drawRoad( g:Graphics, road:Street ):Void {

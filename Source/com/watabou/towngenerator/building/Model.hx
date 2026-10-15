@@ -66,7 +66,7 @@ class Model {
 	public var streets	: Array<Street>;
 	public var roads	: Array<Street>;
 
-	public function new( nPatches=-1, seed=-1 ) {
+	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null ) {
 
 		if (seed > 0) Random.reset( seed );
 		this.nPatches = nPatches != -1 ? nPatches : 15;
@@ -74,6 +74,7 @@ class Model {
 		plazaNeeded		= Random.bool();
 		citadelNeeded	= Random.bool();
 		wallsNeeded		= Random.bool();
+		if (wallOverride != null) wallsNeeded = wallOverride;
 
 		do try {
 			build();
