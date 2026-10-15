@@ -89,9 +89,14 @@ Watabou implementation or a simulation of shared walls, access, and courtyards.
 **Block Rows** is a separate experimental alternative. It replaces eligible convex
 residential/commercial blocks with coordinated street-edge rows, using the district's
 original lot-area setting to size frontages. Larger blocks receive deeper rows.
-A central courtyard and one street-to-courtyard passage remain clear. Corner plots
-are clipped to separate edge-owned sectors, so they can be tapered rather than
-rectangular. Neighboring rows do not overlap. The clipping engine is bundled
+A central courtyard and one street-to-courtyard passage remain clear. Frontage
+plots are clipped to separate edge-owned sectors, then fitted with distinct inset
+building footprints rather than drawn directly. Buildings have seeded width/depth
+variation and rectangular, L-shaped, or stepped outlines. Deep plots may contain
+separate front and rear buildings with a clear gap. Tiny or concave clipped plots
+that cannot safely contain an orthogonal footprint are omitted rather than rendered
+as wedges. The courtyard layout remains unchanged in this footprint refinement.
+Neighboring buildings do not overlap. The clipping engine is bundled
 locally; this mode does not need an online service.
 
 ```text
@@ -132,7 +137,8 @@ mode switching, deterministic reloads, and desktop/mobile controls and exports.
 They also build the first footprint version (`291272b`) for same-seed occupied-area
 comparisons, and check a tapered parcel's front setback and long-edge fallback
 orientation. These checks measure the tested cities, not a universal density gain.
-Block Rows checks cover block containment, pairwise building nonoverlap, clear
+Block Rows checks cover owning-plot and block containment, distinct inset footprints,
+orthogonal corners, articulated shapes, separate rear buildings, pairwise building nonoverlap, clear
 courtyards, clear street-to-courtyard passages, preserved outside-wall development,
 deterministic mode switching, and desktop/mobile PNG exports across several sizes
 and seeds, including cities with and without perimeter walls.

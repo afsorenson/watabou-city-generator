@@ -34,6 +34,36 @@ class BuildingFootprints {
 			if (alternative.square > rectangle.square) rectangle = alternative;
 		}
 		if (rectangle.square < 0.05) return parcel;
+		return articulate( rectangle, variation );
+	}
+
+	public static function fromFrontagePlot( parcel:Polygon, block:Polygon, variation:Int ):Array<Polygon> {
+		if (parcel.length < 3 || !parcel.isConvex() || parcel.square < 0.4) return [];
+		var rectangle = create( parcel, block, 9 );
+		if (rectangle == parcel || rectangle.length != 4 || rectangle.square < 0.3) return [];
+		var width = Point.distance( rectangle[0], rectangle[1] );
+		var depth = Point.distance( rectangle[1], rectangle[2] );
+		if (Math.min( width, depth ) < 0.35) return [];
+		var side = rectangle[1].subtract( rectangle[0] );
+		var inward = rectangle[3].subtract( rectangle[0] );
+		var count = depth > width * 2.6 && depth > 4 ? 2 : 1;
+		var buildings:Array<Polygon> = [];
+		for (buildingIndex in 0...count) {
+			var detail = (variation ^ (buildingIndex * 83492791)) & 0x7fffffff;
+			var sideInset = 0.015 + (detail % 6) / 100;
+			var front = buildingIndex == 0 ? 0.0 : 0.5 + Math.min( 0.12, 0.45 / depth );
+			var back = count == 1 ? 0.76 + ((detail >>> 4) % 22) / 100 :
+				(buildingIndex == 0 ? 0.47 : 0.86 + ((detail >>> 4) % 12) / 100);
+			var outline = new Polygon( [for (corner in [new Point( sideInset, front ), new Point( 1 - sideInset, front ),
+				new Point( 1 - sideInset, back ), new Point( sideInset, back )]) new Point(
+				rectangle[0].x + corner.x * side.x + corner.y * inward.x,
+				rectangle[0].y + corner.x * side.y + corner.y * inward.y )] );
+			if (outline.square >= 0.2) buildings.push( articulate( outline, detail ) );
+		}
+		return buildings;
+	}
+
+	private static function articulate( rectangle:Polygon, variation:Int ):Polygon {
 		var width = Point.distance( rectangle[0], rectangle[1] );
 		var depth = Point.distance( rectangle[1], rectangle[2] );
 		if (Math.min( width, depth ) < 2 || rectangle.square < 12) return rectangle;

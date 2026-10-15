@@ -137,18 +137,23 @@ async function checkBlockRows(page) {
       block: points(block),
       courtyard: points(model.frontageCourtyards[index]),
       access: points(model.frontageAccess[index]),
+      plots: model.frontagePlots[index].map(points),
       buildings: model.patches[index].ward.geometry.map(points),
     }] : []);
   });
   assert.ok(blocks.length > 0, 'Block Rows must replace eligible blocks');
   let buildingCount = 0;
+  let articulated = 0;
+  let rearBuildings = 0;
   const clippingArea = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
   const bounds = polygon => ({
     minX: Math.min(...polygon.map(point => point[0])), maxX: Math.max(...polygon.map(point => point[0])),
     minY: Math.min(...polygon.map(point => point[1])), maxY: Math.max(...polygon.map(point => point[1])),
   });
-  for (const { block, courtyard, access, buildings } of blocks) {
+  for (const { block, courtyard, access, plots, buildings } of blocks) {
     const tolerance = polygonArea(block) * 1e-7;
+    assert.equal(plots.length, buildings.length, 'Every block-row building must retain its owning plot');
+    rearBuildings += plots.length - new Set(plots.map(plot => JSON.stringify(plot))).size;
     assert.ok(polygonArea(courtyard) > 0, 'Rows must reserve a nonempty courtyard');
     assert.ok(clippingArea(polygonClipping.intersection([courtyard], [access])) > 0,
       'Access passage must reach the courtyard');
@@ -159,6 +164,22 @@ async function checkBlockRows(page) {
       const building = buildings[index];
       assert.ok(building.every(point => point.every(Number.isFinite)), 'Block buildings must have finite coordinates');
       assert.ok(polygonArea(building) > 0, 'Block buildings must have positive area');
+      assert.ok(polygonArea(building) < polygonArea(plots[index]),
+        'A building footprint must be smaller than its owning frontage plot');
+      assert.ok(clippingArea(polygonClipping.difference([building], [plots[index]])) < tolerance,
+        'Distinct building footprints must stay inside their owning plots');
+      assert.ok([4, 6, 8].includes(building.length), 'Block buildings must be rectangles, L-shapes, or stepped footprints');
+      if (building.length > 4) articulated += 1;
+      for (let corner = 0; corner < building.length; corner += 1) {
+        const previous = building[(corner + building.length - 1) % building.length];
+        const current = building[corner];
+        const next = building[(corner + 1) % building.length];
+        const incoming = [current[0] - previous[0], current[1] - previous[1]];
+        const outgoing = [next[0] - current[0], next[1] - current[1]];
+        const dot = incoming[0] * outgoing[0] + incoming[1] * outgoing[1];
+        assert.ok(Math.abs(dot) < 1e-7 * Math.hypot(...incoming) * Math.hypot(...outgoing),
+          'Distinct block-row buildings must not retain wedge-shaped plot corners');
+      }
       assert.ok(clippingArea(polygonClipping.difference([building], [block])) < tolerance,
         'Block buildings must stay inside the city block');
       assert.ok(clippingArea(polygonClipping.intersection([building], [courtyard])) < tolerance,
@@ -174,7 +195,7 @@ async function checkBlockRows(page) {
     }
     buildingCount += buildings.length;
   }
-  return { blocks: blocks.length, buildings: buildingCount };
+  return { blocks: blocks.length, buildings: buildingCount, articulated, rearBuildings };
 }
 
 function pixelVariation(bytes) {
@@ -209,7 +230,7 @@ async function capture(page, address, path) {
 
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => errors.push(`${page.url()}\n${error.stack ?? error.message}`));
   page.on('response', response => {
     if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`);
   });
@@ -372,7 +393,10 @@ try {
     await page.getByLabel('Buildings', { exact: true }).selectOption('frontage');
     assert.equal(await geometryHash(page, true), original, 'Block Rows must preserve base parcels, streets, and walls');
     assert.notEqual(await geometryHash(page), original, 'Block Rows must replace building layout');
-    console.log(`PASS: size ${size} block rows: ${JSON.stringify(await checkBlockRows(page))}`);
+    const blockStats = await checkBlockRows(page);
+    assert.ok(blockStats.articulated > 0, 'Test cities must include distinct L-shaped or stepped block buildings');
+    assert.ok(blockStats.rearBuildings > 0, 'Deep plots must support separate front and rear buildings');
+    console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
     const rows = await geometryHash(page);
     await page.reload();
     await page.waitForFunction(() => window.cityGenerator);

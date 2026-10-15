@@ -12,6 +12,7 @@ class BlockFrontage {
 		model.frontageBlocks = [for (patch in model.patches) new Polygon()];
 		model.frontageCourtyards = [for (patch in model.patches) new Polygon()];
 		model.frontageAccess = [for (patch in model.patches) new Polygon()];
+		model.frontagePlots = [for (patch in model.patches) new Array<Polygon>()];
 		for (patchIndex in 0...model.patches.length) {
 			var patch = model.patches[patchIndex];
 			if (!patch.withinCity || !Std.is( patch.ward, CommonWard ) || patch.ward.geometry.length == 0) continue;
@@ -50,6 +51,7 @@ class BlockFrontage {
 			var accessWidth = Math.min( 1.0, Math.max( 0.6, lotWidth * 0.3 ) );
 			var access = quad( accessStart, accessAxis, offset - accessWidth / 2, offset + accessWidth / 2, -gap, accessDepth + gap );
 			var buildings:Array<Polygon> = [];
+			var plots:Array<Polygon> = [];
 			for (edgeIndex in 0...block.length) {
 				var start = block[edgeIndex];
 				var end = block[(edgeIndex + 1) % block.length];
@@ -73,7 +75,10 @@ class BlockFrontage {
 						var polygon = snap( new Polygon( [for (point in outline.slice( 0, outline.length - 1 )) new Point( point[0], point[1] )] ) );
 						if (polygon.length < 3 || Math.abs( polygon.square ) < Math.max( 0.25, lotArea * 0.025 )) continue;
 						if (polygon.square < 0) polygon.reverse();
-						buildings.push( polygon );
+						for (building in BuildingFootprints.fromFrontagePlot( polygon, block, variation )) {
+							buildings.push( building );
+							plots.push( polygon );
+						}
 					}
 				}
 			}
@@ -82,6 +87,7 @@ class BlockFrontage {
 			model.frontageBlocks[patchIndex] = block;
 			model.frontageCourtyards[patchIndex] = courtyard;
 			model.frontageAccess[patchIndex] = access;
+			model.frontagePlots[patchIndex] = plots;
 		}
 		#end
 	}

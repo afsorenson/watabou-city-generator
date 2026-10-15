@@ -25,6 +25,7 @@ class Model {
 	public var frontageBlocks : Array<Polygon> = [];
 	public var frontageCourtyards : Array<Polygon> = [];
 	public var frontageAccess : Array<Polygon> = [];
+	public var frontagePlots : Array<Array<Polygon>> = [];
 
 	// Small Town	6
 	// Large Town	10
