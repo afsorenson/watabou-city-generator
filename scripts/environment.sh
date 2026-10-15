@@ -1,0 +1,5 @@
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$ROOT/.toolchain/bin:$ROOT/.toolchain/neko-2.4.1-osx64:$PATH"
+export HAXE_STD_PATH="$ROOT/.toolchain/haxe-3.4.7/std"
+export HAXELIB_PATH="$ROOT/.toolchain/haxelib"
+export NEKOPATH="$ROOT/.toolchain/neko-2.4.1-osx64"

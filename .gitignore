@@ -2,3 +2,6 @@
 *.iml
 /Export
 /.idea
+/.toolchain
+/node_modules
+/test-results
