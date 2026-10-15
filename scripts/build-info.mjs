@@ -56,7 +56,9 @@ window.saveAs = function(blob, name, options) {
   const commit = git(['rev-parse', '--short=7', 'HEAD']);
   const dirty = Boolean(git(['status', '--porcelain', '--', ...paths]));
   const id = `${commit}${dirty ? '-dirty' : ''}-${sourceHash.slice(0, 10)}`;
-  await writeJson(statePath, { id, commit, sourceHash, dirty, legacy: false, builtAt: new Date().toISOString() });
+  const styles = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="render-style"')
+    ? ['flat', 'roofed'] : ['flat'];
+  await writeJson(statePath, { id, commit, sourceHash, dirty, styles, legacy: false, builtAt: new Date().toISOString() });
   console.log(id);
 } else if (process.argv[2] === 'finish') {
   const info = JSON.parse(await readFile(statePath, 'utf8'));

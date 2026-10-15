@@ -19,6 +19,7 @@ class StateManager {
 	public static var walls : Null<Bool> = null;
 	public static var footprints : Bool = false;
 	public static var blockFrontage : Bool = false;
+	public static var roofed : Bool = false;
 
 	public static function pullParams() {
 		#if html5
@@ -36,6 +37,7 @@ class StateManager {
 			};
 			footprints = params.get( BUILDINGS ) == "footprints";
 			blockFrontage = params.get( BUILDINGS ) == "frontage";
+			roofed = params.get( "style" ) == "roofed";
 		}
 		#end
 	}
@@ -55,6 +57,8 @@ class StateManager {
 		if (blockFrontage) params.set( BUILDINGS, "frontage" );
 		else if (footprints) params.set( BUILDINGS, "footprints" );
 		else params.delete_( BUILDINGS );
+		if (roofed) params.set( "style", "roofed" );
+		else params.delete_( "style" );
 		var query:String = untyped params.toString();
 		var url = Browser.location.pathname + "?" + query + Browser.location.hash;
 		Browser.window.history.replaceState( {size: size, seed: seed, walls: walls}, getStateName(), url );

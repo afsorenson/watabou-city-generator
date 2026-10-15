@@ -9,6 +9,7 @@ const seedInput = document.querySelector('#comparison-seed');
 const sizeInput = document.querySelector('#comparison-size');
 const wallsInput = document.querySelector('#comparison-walls');
 const buildingsInput = document.querySelector('#comparison-buildings');
+const styleInput = document.querySelector('#comparison-style');
 const snapshots = new Map();
 const regions = { northwest: [450, 350], center: [724, 724], south: [750, 1100] };
 let catalog;
@@ -50,6 +51,7 @@ function loadEngine(build, query) {
           const api = frame.contentWindow.cityGenerator;
           if (api) {
             if (!build.legacy && api.buildId !== build.id) throw new Error(`Engine identity mismatch for ${build.id}.`);
+            if (Boolean(api.roofed) !== (query.style === 'roofed')) throw new Error(`Build ${build.id} does not support the requested rendering style.`);
             if (api.seed !== query.seed || api.size !== query.size || api.walls !== query.walls
               || Boolean(api.blockFrontage) !== (query.buildings === 'frontage')
               || Boolean(api.footprints) !== (query.buildings === 'footprints')) {
@@ -70,7 +72,7 @@ function loadEngine(build, query) {
     };
     const url = new URL(build.url, root);
     url.search = new URLSearchParams({ seed: query.seed, size: query.size, walls: query.walls ? '1' : '0',
-      buildings: query.buildings, embed: '1' });
+      buildings: query.buildings, style: query.style, embed: '1' });
     frame.src = url.href;
     document.body.append(frame);
   });
@@ -96,7 +98,7 @@ function capturePng(frame) {
 function comparisonUrl() {
   const url = new URL('compare.html', root);
   url.search = new URLSearchParams({ before: settings.before, after: settings.after, seed: settings.seed,
-    size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, view: regionInput.value });
+    size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style, view: regionInput.value });
   return url;
 }
 
@@ -111,7 +113,7 @@ async function render() {
     context.fillRect(0, 0, 600, 600);
   }
   settings = { before: beforeInput.value, after: afterInput.value, seed: Number(seedInput.value),
-    size: Number(sizeInput.value), walls: wallsInput.checked, buildings: buildingsInput.value };
+    size: Number(sizeInput.value), walls: wallsInput.checked, buildings: buildingsInput.value, style: styleInput.value };
   history.replaceState(null, '', comparisonUrl());
   status.textContent = 'Rendering comparison...';
   for (const control of form.elements) control.disabled = true;
@@ -135,7 +137,7 @@ async function render() {
     status.textContent = `Seed ${settings.seed} · Size ${settings.size} · ${settings.walls ? 'Walled' : 'Open'} · ${settings.buildings}`;
     for (const button of document.querySelectorAll('.download-comparison')) button.disabled = false;
     const back = new URL(`builds/${settings.after}/`, root);
-    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings });
+    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style });
     document.querySelector('#back-link').href = back.href;
   } catch (error) {
     status.textContent = error.message;
@@ -155,7 +157,7 @@ for (const button of document.querySelectorAll('.download-comparison')) {
     if (!snapshot) return;
     const anchor = document.createElement('a');
     anchor.href = regions[regionInput.value] ? button.closest('figure').querySelector('canvas').toDataURL('image/png') : snapshot.png;
-    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${regionInput.value}.png`;
+    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${settings.style}-${regionInput.value}.png`;
     anchor.click();
   });
 }
@@ -178,8 +180,10 @@ try {
     for (const build of catalog.builds) input.add(new Option(`${build.id}${build.legacy ? ' (legacy engine)' : ''}`, build.id));
   }
   const after = params.get('after') ?? catalog.current;
-  const before = params.get('before') ?? catalog.builds.find(build => build.id !== after && !build.dirty)?.id
-    ?? catalog.builds.find(build => build.id !== after)?.id ?? after;
+  const requestedStyle = params.get('style') ?? 'flat';
+  const compatible = build => requestedStyle === 'flat' || build.styles?.includes(requestedStyle);
+  const before = params.get('before') ?? catalog.builds.find(build => build.id !== after && !build.dirty && compatible(build))?.id
+    ?? catalog.builds.find(build => build.id !== after && compatible(build))?.id ?? after;
   if (![before, after].every(id => catalog.builds.some(build => build.id === id))) throw new Error('A requested archived build is unavailable.');
   beforeInput.value = before;
   afterInput.value = after;
@@ -187,6 +191,7 @@ try {
   sizeInput.value = params.get('size') ?? '40';
   wallsInput.checked = params.get('walls') !== '0';
   buildingsInput.value = params.get('buildings') ?? 'frontage';
+  styleInput.value = params.get('style') ?? 'flat';
   regionInput.value = params.get('view') ?? 'whole';
   document.querySelector('#back-link').href = root.href;
   await render();

@@ -15,6 +15,8 @@ class BrowserControls {
 			walls: Model.instance.wall != null,
 			footprints: StateManager.footprints,
 			blockFrontage: StateManager.blockFrontage,
+			roofed: StateManager.roofed,
+			setStyle: setStyle,
 			exportPng: exportPng,
 			restoreSeed: restoreSeed,
 			generate: generate
@@ -26,6 +28,12 @@ class BrowserControls {
 		if (seed < 1 || seed > 2147483646 || seed != Math.floor( seed )) return;
 		StateManager.seed = seed;
 		generate( StateManager.size, StateManager.walls, false, StateManager.footprints, StateManager.blockFrontage );
+	}
+
+	private static function setStyle( roofed:Bool ):Void {
+		StateManager.roofed = roofed;
+		StateManager.pushParams();
+		Game.switchScene( TownScene );
 	}
 
 	private static function generate( size:Int, walls:Null<Bool>, newSeed:Bool, footprintMode:Bool, blockFrontageMode=false ):Void {

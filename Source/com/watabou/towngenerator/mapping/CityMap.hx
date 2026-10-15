@@ -12,6 +12,7 @@ import com.watabou.geom.Polygon;
 import com.watabou.towngenerator.wards.*;
 import com.watabou.towngenerator.building.CurtainWall;
 import com.watabou.towngenerator.building.Model;
+import com.watabou.towngenerator.StateManager;
 
 using com.watabou.utils.ArrayExtender;
 using com.watabou.utils.GraphicsExtender;
@@ -24,6 +25,7 @@ class CityMap extends Sprite {
 	private var patches	: Array<PatchView>;
 
 	private var brush	: Brush;
+	private var roofRenderer : RoofRenderer;
 
 	public function new( model:Model ) {
 		super();
@@ -38,6 +40,12 @@ class CityMap extends Sprite {
 			addChild( roadView );
 		}
 
+		var shadows = new Shape();
+		var details = new Sprite();
+		if (StateManager.roofed) {
+			addChild( shadows );
+			roofRenderer = new RoofRenderer( shadows.graphics, details );
+		}
 		patches = [];
 		for (patch in model.patches) {
 			var patchView = new PatchView( patch );
@@ -62,10 +70,16 @@ class CityMap extends Sprite {
 			}
 
 			patches.push( patchView );
+			if (roofRenderer != null && Type.getClass( patch.ward ) != Park && Type.getClass( patch.ward ) != Market && patchDrawn) {
+				g.clear();
+				for (index in 0...patch.ward.geometry.length)
+					roofRenderer.draw( g, patch.ward.geometry[index], index + patches.length * 19349663 );
+			}
 			if (patchDrawn)
 				addChild( patchView );
 		}
 
+		if (roofRenderer != null) addChild( details );
 		for (patch in patches)
 			addChild( patch.hotArea );
 
@@ -77,6 +91,10 @@ class CityMap extends Sprite {
 
 		if (model.citadel != null)
 			drawWall( walls.graphics, cast( model.citadel.ward, Castle).wall, true );
+	}
+
+	public function setRenderScale( pixelsPerUnit:Float ):Void {
+		if (roofRenderer != null) roofRenderer.setScale( pixelsPerUnit );
 	}
 
 	public function getCityBounds():Rectangle {

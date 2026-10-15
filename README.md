@@ -59,7 +59,7 @@ to restore it without changing the other settings. **New City** chooses a new se
 Refresh preserves the seed and settings already in the URL. Invalid URL seeds are
 replaced with a valid seed rather than passed to the random generator.
 
-**Copy Link** copies the actual seed, size, wall state, and building mode into a
+**Copy Link** copies the actual seed, size, wall state, building mode, and render style into a
 link bound to an archived build. If clipboard access is unavailable, a dialog
 provides the link. Links are local to this server, not cloud-shared map saves.
 
@@ -82,7 +82,7 @@ toggle the checkbox. Changing either setting keeps the seed.
 ### Compare Builds
 
 Choose **Compare** to open two real local engine snapshots with the same seed,
-size, wall state, and building mode. Select **Before** and **After**, then **Apply**
+size, wall state, building mode, and rendering style. Select **Before** and **After**, then **Apply**
 to render them. **View** switches between the whole 2048px map and matching 600px
 Northwest, Center, or South neighborhood crops. Each panel identifies its actual
 build and can download its full map or selected crop. **Copy Link** preserves both
@@ -101,6 +101,31 @@ not change valid-seed generation, comparing it against the preceding build shoul
 show the same city. Differences are expected only when comparing actual engine
 changes. Missing or incompatible builds are reported rather than replaced by the
 current engine.
+
+### Rendering Styles
+
+**Style** is independent of **Buildings**. **Flat** preserves the established
+monochrome drawing. **Roofed** adds muted gray pitched-roof planes, subtle eaves,
+consistent southeast shadows from a northwest light, ridge lines, and occasional
+small chimneys. L-shaped and stepped footprints receive multiple roof sections;
+other polygons receive clipped roof planes. Parks and market features stay flat.
+This is a 2D roof treatment, not a full 3D or architectural roof simulation.
+
+```text
+http://127.0.0.1:8788/?size=40&seed=1091337103&walls=1&buildings=footprints&style=roofed
+```
+
+Changing style redraws the same model: it does not regenerate buildings, streets,
+walls, or the seed. Ridge/chimney detail simplifies at small screen scales. Roofed
+PNG exports use a fresh export-scale drawing tree, so the 2048px result does not
+depend on the screen viewport or its cached graphics. Switching back to Flat
+restores the Flat drawing.
+
+Style survives seed restoration, New City, copied links, and comparisons. Roofed
+filenames include `roofed` before the compiled build ID. Comparison uses one shared
+style for both engines; if a selected archived engine lacks it, the page reports
+the incompatibility rather than substituting Flat. Builds record supported styles,
+and automatic comparison selection prefers compatible archives.
 
 ### Building Modes
 
@@ -226,6 +251,19 @@ For just seed/build identity and comparison workflows after a build:
 ```sh
 npm run test:identity
 ```
+
+For just renderer and roof workflows after a build:
+
+```sh
+npm run test:roofs
+```
+
+Roof checks cover rotated rectangles and compound footprints, roof-plane coverage,
+nonoverlap and containment, model reuse and unchanged geometry, deterministic
+Flat restoration, visible shaded planes, identical desktop/mobile PNG pixels,
+all building modes, shared style restoration, equal-build Roofed comparisons,
+and explicit failure for incompatible archived styles. Matching crops are
+`test-results/roof-flat-neighborhood.png` and `test-results/roofed-neighborhood.png`.
 
 These checks validate seed restoration after refresh/New City, invalid inputs,
 compiled engine fingerprints, build-bound links and clipboard fallback, locked

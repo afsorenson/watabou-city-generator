@@ -68,13 +68,24 @@ class TownScene extends Scene {
 		var clip = new Rectangle( (resolution - bounds.width * exportScale) / 2,
 			(resolution - bounds.height * exportScale) / 2,
 			bounds.width * exportScale, bounds.height * exportScale );
-		map.mask = null;
-		image.draw( map, transform, null, null, clip, true );
-		map.mask = mapMask;
+		var exportMap = StateManager.roofed ? new CityMap( Model.instance ) : map;
+		if (StateManager.roofed) {
+			exportMap.scaleX = exportMap.scaleY = exportScale;
+			exportMap.x = transform.tx;
+			exportMap.y = transform.ty;
+		}
+		exportMap.mask = null;
+		exportMap.setRenderScale( exportScale );
+		image.draw( exportMap, transform, null, null, clip, true );
+		if (exportMap == map) {
+			map.setRenderScale( scale * scaleX );
+			map.mask = mapMask;
+		}
 		var png = image.encode( image.rect, new PNGEncoderOptions() );
 		image.dispose();
 		var bytes:haxe.io.Bytes = png;
 		var suffix = StateManager.blockFrontage ? "-frontage" : (StateManager.footprints ? "-footprints" : "");
+		if (StateManager.roofed) suffix += "-roofed";
 		new FileReference().save( ByteArray.fromBytes( bytes.sub( 0, png.length ) ),
 			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}$suffix-${BuildInfo.identifier()}.png' );
 	}
@@ -95,6 +106,7 @@ class TownScene extends Scene {
 		mapMask.graphics.drawRect( map.x + bounds.x * scale, map.y + bounds.y * scale,
 			bounds.width * scale, bounds.height * scale );
 		mapMask.graphics.endFill();
+		map.setRenderScale( scale * this.scaleX );
 
 		buttons.x = rWidth - buttons.width - 1;
 		buttons.y = 1;

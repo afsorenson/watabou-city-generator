@@ -7,6 +7,7 @@ const seedInput = document.querySelector('#seed');
 const applySeedButton = document.querySelector('#apply-seed');
 const copyButton = document.querySelector('#copy-link');
 const compareButton = document.querySelector('#compare');
+const styleInput = document.querySelector('#render-style');
 const status = document.querySelector('#build-status');
 const appRoot = new URL(window.cityBuild?.appRoot ?? './', location.href);
 if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embedded');
@@ -20,7 +21,8 @@ function cityUrl() {
   const city = window.cityGenerator;
   const url = new URL(`builds/${city.buildId}/`, appRoot);
   url.search = new URLSearchParams({ size: city.size, seed: city.seed, walls: city.walls ? '1' : '0',
-    buildings: city.blockFrontage ? 'frontage' : (city.footprints ? 'footprints' : 'original') });
+    buildings: city.blockFrontage ? 'frontage' : (city.footprints ? 'footprints' : 'original'),
+    style: city.roofed ? 'roofed' : 'flat' });
   return url;
 }
 
@@ -29,8 +31,9 @@ document.addEventListener('city-ready', () => {
   wallsInput.checked = window.cityGenerator.walls;
   buildingsInput.value = window.cityGenerator.blockFrontage ? 'frontage' : (window.cityGenerator.footprints ? 'footprints' : 'original');
   seedInput.value = window.cityGenerator.seed;
+  styleInput.value = window.cityGenerator.roofed ? 'roofed' : 'flat';
   document.querySelector('#build-id').textContent = window.cityGenerator.buildId;
-  for (const control of [sizeInput, wallsInput, buildingsInput, seedInput, applySeedButton, copyButton, compareButton, regenerateButton, exportButton]) control.disabled = false;
+  for (const control of [sizeInput, wallsInput, buildingsInput, styleInput, seedInput, applySeedButton, copyButton, compareButton, regenerateButton, exportButton]) control.disabled = false;
   if (window.cityBuild?.id !== window.cityGenerator.buildId) showStatus('Build mismatch: reload this page.');
 });
 
@@ -71,5 +74,6 @@ wallsInput.addEventListener('change', () => {
   window.cityGenerator.generate(Number(sizeInput.value), wallsInput.checked, false, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage');
 });
 buildingsInput.addEventListener('change', () => generate(false));
+styleInput.addEventListener('change', () => window.cityGenerator.setStyle(styleInput.value === 'roofed'));
 regenerateButton.addEventListener('click', () => generate(true));
 exportButton.addEventListener('click', () => window.cityGenerator.exportPng());

@@ -608,9 +608,11 @@ try {
       window.__testDistrictTransitions = typeof com_watabou_towngenerator_building_DistrictTransitions === 'undefined'
         ? null : com_watabou_towngenerator_building_DistrictTransitions;
       window.__testFrontageBuilding = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
-        ? null : com_watabou_towngenerator_building_BuildingFootprints.fromFrontagePlot;`) });
+        ? null : com_watabou_towngenerator_building_BuildingFootprints.fromFrontagePlot;
+      window.__testRoofRenderer = typeof com_watabou_towngenerator_mapping_RoofRenderer === 'undefined'
+        ? null : com_watabou_towngenerator_mapping_RoofRenderer;`) });
   });
-  if (!process.argv.includes('--identity-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only')) {
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
   const second = await capture(page, seedUrl, 'test-results/desktop-repeat.png');
@@ -969,6 +971,7 @@ try {
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   }
+  if (!process.argv.includes('--roofs-only')) {
   const restoreUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
   await capture(page, `${url}/?size=6&seed=2147483647&walls=0`);
   assert.ok(Number(new URL(page.url()).searchParams.get('seed')) >= 1
@@ -1096,6 +1099,149 @@ try {
   assert.equal(await geometryHash(page), originalCity);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Seed and build controls must fit mobile width');
   console.log('PASS: compiled build identity, editable seed restoration, version-bound sharing, real-build comparison, matching crops and mobile layout');
+  }
+  if (!process.argv.includes('--identity-only')) {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    const roofUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`;
+    await capture(page, roofUrl, 'test-results/roof-flat-desktop.png');
+    const initialGeometry = await geometryHash(page);
+    await page.evaluate(() => { window.__beforeRoofModel = window.__testModel; });
+    const fixturePlans = await page.evaluate(() => {
+      const fixtures = [
+        [[0, 0], [8, 0], [8, 4], [0, 4]],
+        [[0, 0], [8, 0], [8, 3], [3, 3], [3, 8], [0, 8]],
+        [[0, 0], [10, 0], [10, 4], [7, 4], [7, 7], [3, 7], [3, 4], [0, 4]],
+        [[0, 0], [7, 1], [5, 6], [1, 5]],
+      ];
+      return fixtures.flatMap((fixture, fixtureIndex) => [0, Math.PI / 5].map(angle => {
+        const footprint = fixture.map(point => new window.__testPoint(point[0] * Math.cos(angle) - point[1] * Math.sin(angle),
+          point[0] * Math.sin(angle) + point[1] * Math.cos(angle)));
+        const plan = window.__testRoofRenderer.plan(footprint);
+        const points = polygon => polygon.map(point => [point.x, point.y]);
+        return { footprint: points(footprint), fixtureIndex, faces: plan.faces.map(face => ({ polygon: points(face.polygon), light: face.light })),
+          sections: plan.sections.map(points), ridges: plan.ridges.map(points) };
+      }));
+    });
+    const areaOf = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+    for (const plan of fixturePlans) {
+      const area = polygonArea(plan.footprint);
+      assert.ok(plan.faces.length >= 2 && plan.faces.some(face => face.light) && plan.faces.some(face => !face.light),
+        'Roof plans must include contrasting planes');
+      if ([1, 2].includes(plan.fixtureIndex)) assert.ok(plan.sections.length > 1, 'L-shaped and stepped roofs need multiple sections');
+      let covered = 0;
+      for (let index = 0; index < plan.faces.length; index += 1) {
+        const face = plan.faces[index].polygon;
+        assert.ok(face.every(point => point.every(Number.isFinite)));
+        assert.ok(areaOf(polygonClipping.difference([face], [plan.footprint])) < area * 1e-6,
+          'Roof faces must remain inside the original footprint');
+        for (let previous = 0; previous < index; previous += 1) {
+          assert.ok(areaOf(polygonClipping.intersection([face], [plan.faces[previous].polygon])) < area * 1e-6,
+            'Roof planes must not overlap in area');
+        }
+        covered += polygonArea(face);
+      }
+      assert.ok(Math.abs(covered - area) < area * 1e-6, 'Roof sections must cover the entire footprint without filling notches');
+    }
+    const flatDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    await (await flatDownload).saveAs('test-results/roof-flat-export.png');
+    const flatBytes = await readFile('test-results/roof-flat-export.png');
+    await page.getByLabel('Rendering style', { exact: true }).selectOption('roofed');
+    await page.waitForFunction(() => window.cityGenerator.roofed === true);
+    assert.equal(await geometryHash(page), initialGeometry, 'Roofed must not change buildings, roads, or walls');
+    assert.ok(await page.evaluate(() => window.__testModel === window.__beforeRoofModel), 'Style changes must reuse the generated model');
+    assert.equal(new URL(page.url()).searchParams.get('style'), 'roofed');
+    const roofDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    const roofExport = await roofDownload;
+    assert.ok(roofExport.suggestedFilename().includes(`-roofed-${currentBuild.id}.png`));
+    await roofExport.saveAs('test-results/roofed-export.png');
+    const roofBytes = await readFile('test-results/roofed-export.png');
+    const roofPng = PNG.sync.read(roofBytes);
+    assert.equal(roofPng.width, 2048);
+    assert.equal(roofPng.height, 2048);
+    assert.notEqual(pixelHash(flatBytes), pixelHash(roofBytes), 'Roof shading must visibly change exported pixels');
+    const tones = [150, 194].map(tone => {
+      let count = 0;
+      for (let offset = 0; offset < roofPng.data.length; offset += 4) if (roofPng.data[offset] === tone) count += 1;
+      return count;
+    });
+    assert.ok(tones.every(count => count > 1000), 'Roof PNG must contain substantial light and dark roof planes');
+    await saveNeighborhood(roofBytes, 'test-results/roofed-neighborhood.png', 500, 450);
+    await saveNeighborhood(flatBytes, 'test-results/roof-flat-neighborhood.png', 500, 450);
+    await page.screenshot({ path: 'test-results/roofed-desktop.png' });
+    await page.getByLabel('Rendering style', { exact: true }).selectOption('flat');
+    assert.equal(await geometryHash(page), initialGeometry);
+    const restoredDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    await (await restoredDownload).saveAs('test-results/roof-restored-flat.png');
+    assert.equal(pixelHash(await readFile('test-results/roof-restored-flat.png')), pixelHash(flatBytes), 'Returning to Flat must restore identical pixels');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await capture(page, `${roofUrl}&style=roofed`, `test-results/roofed-mobile-${width}.png`);
+      assert.equal(await page.getByLabel('Rendering style', { exact: true }).inputValue(), 'roofed');
+      assert.equal(await geometryHash(page), initialGeometry);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      const mobileDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+      await (await mobileDownload).saveAs(`test-results/roofed-mobile-${width}-export.png`);
+      assert.equal(pixelHash(await readFile(`test-results/roofed-mobile-${width}-export.png`)), pixelHash(roofBytes),
+        'Roof export detail must be independent of screen viewport');
+    }
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
+    await page.getByRole('button', { name: 'Copy city link' }).click();
+    await page.waitForFunction(() => document.querySelector('#build-status').textContent === 'City link copied.');
+    const shared = await page.evaluate(() => navigator.clipboard.readText());
+    assert.equal(new URL(shared).searchParams.get('style'), 'roofed');
+    await page.goto(shared);
+    await page.waitForFunction(() => window.cityGenerator?.roofed === true);
+    assert.equal(await geometryHash(page), initialGeometry);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    for (const mode of ['original', 'footprints']) {
+      await page.getByLabel('Buildings', { exact: true }).selectOption(mode);
+      await page.getByLabel('Rendering style', { exact: true }).selectOption('flat');
+      const geometry = await geometryHash(page);
+      await page.getByLabel('Rendering style', { exact: true }).selectOption('roofed');
+      assert.equal(await geometryHash(page), geometry, `Roofed must preserve ${mode} geometry`);
+      const exportPromise = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+      const exported = await exportPromise;
+      assert.ok(exported.suggestedFilename().includes('-roofed-'));
+      await exported.saveAs(`test-results/roofed-${mode}.png`);
+      assert.ok(pixelVariation(await readFile(`test-results/roofed-${mode}.png`)) > 10000);
+    }
+    await page.getByLabel('Buildings', { exact: true }).selectOption('frontage');
+    await page.getByRole('button', { name: 'Generate a new city' }).click();
+    assert.equal(new URL(page.url()).searchParams.get('style'), 'roofed');
+    await page.getByLabel('Seed', { exact: true }).fill('1091337103');
+    await page.getByRole('button', { name: 'Apply seed' }).click();
+    assert.equal(await geometryHash(page), initialGeometry);
+    assert.equal(new URL(page.url()).searchParams.get('style'), 'roofed');
+    await page.getByRole('button', { name: 'Compare builds' }).click();
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]')?.disabled);
+    assert.equal(new URL(page.url()).searchParams.get('style'), 'roofed');
+    assert.equal(await page.getByLabel('Comparison style', { exact: true }).inputValue(), 'roofed');
+    await page.getByLabel('Before build', { exact: true }).selectOption(currentBuild.id);
+    await page.getByRole('button', { name: 'Apply comparison settings' }).click();
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]').disabled);
+    assert.ok(await page.evaluate(() => document.querySelector('[data-side="before"] canvas').toDataURL()
+      === document.querySelector('[data-side="after"] canvas').toDataURL()), 'Equal roofed builds and settings must produce identical comparison pixels');
+    const comparisonExport = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download after PNG' }).click();
+    assert.ok((await comparisonExport).suggestedFilename().includes('-roofed-'));
+    await page.screenshot({ path: 'test-results/roofed-comparison.png' });
+    const catalog = JSON.parse(await readFile('Export/html5/bin/builds.json', 'utf8'));
+    const oldBuild = catalog.builds.find(build => build.legacy
+      || (build.commit === '6784b3e' && !build.dirty));
+    if (oldBuild) {
+      await page.getByLabel('Before build', { exact: true }).selectOption(oldBuild.id);
+      await page.getByRole('button', { name: 'Apply comparison settings' }).click();
+      await page.waitForFunction(() => document.querySelector('#comparison-status').textContent.includes('does not support'));
+      assert.equal(await page.getByRole('button', { name: 'Download after PNG' }).isDisabled(), true,
+        'An unsupported archived rendering style must not silently fall back to Flat');
+    }
+    console.log('PASS: compound roof plans, clipped planes, unchanged geometry, deterministic styles, viewport-independent PNG detail and sharing');
+  }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');
 } finally {
