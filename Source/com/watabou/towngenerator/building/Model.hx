@@ -29,6 +29,7 @@ class Model {
 	public var frontageLanes : Array<Array<Polygon>> = [];
 	public var frontageLanePaths : Array<Array<Polygon>> = [];
 	public var frontageLaneKinds : Array<Array<String>> = [];
+	public var frontageLaneWidths : Array<Array<Float>> = [];
 	public var frontageTransitions : Array<DistrictTransitions> = [];
 	public var frontageGroupIds : Array<Array<Int>> = [];
 	public var frontageGroupPassages : Array<Array<Polygon>> = [];

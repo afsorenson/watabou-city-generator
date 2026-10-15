@@ -81,10 +81,79 @@ async function neighborhoodLaneHash(page) {
   const snapshot = await page.evaluate(() => {
     const model = window.__testModel;
     const points = polygon => polygon.map(point => [point.x, point.y]);
-    return JSON.stringify({ lanes: model.frontageLanes.map(lanes => lanes.map(points)),
-      paths: model.frontageLanePaths.map(paths => paths.map(points)), kinds: model.frontageLaneKinds });
+    return JSON.stringify(model.frontageLanePaths.map((paths, district) => {
+      if (!paths.length) return [];
+      const kinds = model.frontageLaneKinds[district];
+      const spines = paths.filter((path, index) => kinds[index] === 'spine');
+      const first = spines[0][0];
+      const last = spines[0][spines[0].length - 1];
+      const length = Math.hypot(last.x - first.x, last.y - first.y);
+      const axis = { x: (last.x - first.x) / length, y: (last.y - first.y) / length };
+      const junction = point => {
+        let closest = -1;
+        let nearest = 0.51;
+        spines.forEach((path, index) => {
+          for (let segment = 1; segment < path.length; segment += 1) {
+            const start = path[segment - 1];
+            const end = path[segment];
+            const direction = { x: end.x - start.x, y: end.y - start.y };
+            const squared = direction.x ** 2 + direction.y ** 2;
+            const fraction = Math.max(0, Math.min(1, ((point.x - start.x) * direction.x
+              + (point.y - start.y) * direction.y) / squared));
+            const distance = Math.hypot(point.x - start.x - fraction * direction.x,
+              point.y - start.y - fraction * direction.y);
+            if (distance < nearest) { nearest = distance; closest = index; }
+          }
+        });
+        return closest;
+      };
+      return paths.map((path, index) => kinds[index] === 'spine' ? { kind: 'spine', path: points(path) } : {
+        kind: 'connector', offset: Math.round((path[0].x * axis.x + path[0].y * axis.y) * 10000) / 10000,
+        start: junction(path[0]), end: junction(path[path.length - 1]),
+      });
+    }));
   });
   return createHash('sha256').update(snapshot).digest('hex');
+}
+
+async function checkStreetHierarchy(page) {
+  const districts = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.frontageBlocks.flatMap((block, index) => block.length ? [{
+      lanes: model.frontageLanes[index].map(points), kinds: model.frontageLaneKinds[index],
+      widths: model.frontageLaneWidths[index], passages: model.frontageGroupPassages[index].map(points),
+    }] : []);
+  });
+  let spines = 0;
+  let connectors = 0;
+  let passages = 0;
+  for (const district of districts) {
+    assert.equal(district.widths.length, district.lanes.length, 'Every reserved lane must have an explicit width role');
+    const spineWidths = district.widths.filter((width, index) => district.kinds[index] === 'spine');
+    const connectorWidths = district.widths.filter((width, index) => district.kinds[index] === 'connector');
+    assert.ok(spineWidths.every(width => width >= 0.52 && width <= 0.9 && width < 1),
+      'Neighborhood spines must remain below the original district-street width');
+    assert.ok(connectorWidths.every(width => width >= 0.34 && width <= 0.56 && width < Math.min(...spineWidths)),
+      'Local connectors must be narrower than their neighborhood spines');
+    district.lanes.forEach((lane, index) => {
+      const isSpine = district.kinds[index] === 'spine';
+      const opposite = isSpine ? lane.length - 1 : 1;
+      const actual = Math.hypot(lane[0][0] - lane[opposite][0], lane[0][1] - lane[opposite][1]);
+      assert.ok(Math.abs(actual - district.widths[index]) < 3e-6,
+        'Reserved lane geometry must reflect its classified width, not just metadata');
+      if (isSpine) spines += 1;
+      else connectors += 1;
+    });
+    for (const passage of district.passages) {
+      const width = Math.hypot(passage[0][0] - passage[1][0], passage[0][1] - passage[1][1]);
+      assert.ok(width >= 0.18 - 1e-6 && width <= 0.28 + 1e-6 && width < 0.34,
+        'Group-end passages must be narrower than local connectors');
+      passages += 1;
+    }
+  }
+  assert.ok(spines > 0, 'Test cities must exercise neighborhood spine widths');
+  return { spines, connectors, passages };
 }
 
 async function checkDistrictTransitions(page) {
@@ -690,6 +759,8 @@ try {
     assert.notEqual(await geometryHash(page), original, 'Block Rows must replace building layout');
     const blockStats = await checkBlockRows(page);
     const topology = await checkNeighborhoodTopology(page);
+    const hierarchy = await checkStreetHierarchy(page);
+    console.log(`PASS: street hierarchy: ${JSON.stringify(hierarchy)}`);
     if (size >= 15) assert.ok(topology.junctions > 0, 'Larger test cities must include staggered T-junctions');
     assert.ok(blockStats.articulated > 0, 'Test cities must include distinct L-shaped or stepped block buildings');
     console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
@@ -702,6 +773,34 @@ try {
     const lanesBeforeReference = await neighborhoodLaneHash(page);
     const afterGeometry = await transitionGeometry(page);
     const boundaryPairs = await sharedBoundaryPairs(page);
+    const hierarchyReference = await startServer({ root: resolve('.toolchain/hierarchy-reference'), port: 0 });
+    try {
+      await capture(page, `${hierarchyReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
+        `test-results/hierarchy-before-${size}-${seed}.png`);
+      assert.equal(await neighborhoodLaneHash(page), lanesBeforeReference,
+        'Width hierarchy must preserve route placement and junction connectivity');
+      const before = await districtCoverage(page);
+      const shared = after.flatMap(district => {
+        const previous = before.find(candidate => candidate.index === district.index);
+        return previous ? [{ before: previous, after: district }] : [];
+      });
+      const oldArea = shared.reduce((sum, pair) => sum + pair.before.buildingArea, 0);
+      const newArea = shared.reduce((sum, pair) => sum + pair.after.buildingArea, 0);
+      assert.ok(shared.length > 0 && newArea >= oldArea * 0.97 && newArea <= oldArea * 1.03,
+        'Width hierarchy must keep matching-district building area within 3% of the previous version');
+      await writeFile(`test-results/hierarchy-${size}-${seed}.json`, JSON.stringify({ size, seed, walls,
+        hierarchy, oldArea, newArea, districts: shared }, null, 2));
+      console.log(`PASS: street hierarchy building-area change ${((newArea / oldArea - 1) * 100).toFixed(2)}%`);
+      if (size === 40 && walls === 1) {
+        const download = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        await (await download).saveAs('test-results/hierarchy-before-export.png');
+        await saveNeighborhood(await readFile('test-results/hierarchy-before-export.png'),
+          'test-results/hierarchy-before-neighborhood.png', 500, 450);
+      }
+    } finally {
+      await closeTestServer(hierarchyReference.server);
+    }
     const groupingReference = await startServer({ root: resolve('.toolchain/grouping-reference'), port: 0 });
     try {
       await capture(page, `${groupingReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
@@ -840,6 +939,7 @@ try {
   await saveNeighborhood(rowsBytes, 'test-results/topology-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/transitions-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/grouping-after-neighborhood.png', 500, 450);
+  await saveNeighborhood(rowsBytes, 'test-results/hierarchy-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-south.png', 750, 1100);
   const rowsPng = PNG.sync.read(rowsBytes);
   assert.equal(rowsPng.width, 2048);

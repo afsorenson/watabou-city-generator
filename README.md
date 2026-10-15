@@ -124,6 +124,16 @@ must retain 97-108% of its previous building area and fit inside its cell and
 block without obstructing a courtyard. This is a conservative first grouping
 pass, not a general corner-building or shared-wall construction simulation.
 
+Block Rows uses an explicit width hierarchy in the original engine's coordinate
+units: main routes remain 2.0 and district streets 1.0, neighborhood spines reserve
+0.52-0.90, local connectors 0.34-0.56, and group-end passages 0.18-0.28. Wider
+neighborhood spines remain narrower than district streets. Plot setbacks use the
+same reserved widths as the lane geometry, so clearance changes are real rather
+than painted over buildings. Ordinary gaps between buildings are not promoted to
+roads. Rendered white space also includes setbacks and stroke effects, so it is
+not identical to the nominal width. Routes and junction connections are retained;
+plots, fitting, and some building/group counts can change with the new clearance.
+
 ```text
 http://127.0.0.1:8788/?size=40&seed=682063530&walls=1&buildings=frontage
 ```
@@ -154,7 +164,7 @@ Prioritized follow-ups after neighborhood street topology:
 - [x] **Vary building grouping (first pass).** Mix short attached frontages and
 	detached buildings, preserve individual outlines, vary rear wings, and reserve end
 	passages. More elaborate corner buildings and independent rear structures remain future work.
-- [ ] **Clarify street hierarchy.** Distinguish main routes, neighborhood connecting
+- [x] **Clarify street hierarchy (first pass).** Distinguish main routes, neighborhood connecting
 	lanes, and narrow access passages through consistent widths and frontage spacing.
 - [ ] **Refine outskirts.** Replace raw wedge-shaped roadside plots with distinct
 	buildings and a gradual density falloff, preserving farms and approach roads.
@@ -191,7 +201,7 @@ and seeds, including cities with and without perimeter walls.
 The pre-subdivision version (`5f324c0`) is built for matching-seed comparisons.
 Per-district area and coverage reports are written to `test-results/coverage-*.json`.
 The pre-topology subdivision fixtures measured roughly 35-37% to 64-66% building
-coverage in shared districts. Current topology fixtures measure about 60-63%,
+coverage in shared districts. Current width-hierarchy fixtures measure about 59.5-62%,
 retaining over 90% of the dense version's coverage; these are regression
 measurements, not universal guarantees.
 Matching 600-pixel crops are saved as `coverage-before-neighborhood.png`,
@@ -203,20 +213,28 @@ short connectors, clear lanes, and connectivity from active lanes to block-bound
 routes. `topology-*.json` records coverage and topology measurements, while
 `topology-before-neighborhood.png` and `topology-after-neighborhood.png` provide
 matching visual crops.
-The pre-transition version (`f625b1f`) verifies that neighborhood lane geometry is
-identical. Transition checks cover reciprocal shared-edge targets, monotonic inward
+The pre-transition version (`f625b1f`) verifies preserved neighborhood routes and
+junctions; widths are intentionally different after the hierarchy pass. Transition
+checks cover reciprocal shared-edge targets, monotonic inward
 fade, isolated districts, compatible street-facing alignment, and actual building
 area contrast across paired boundary frontages. Fixed fixtures show approximately
 25-31% lower mean absolute log-area contrast, not a universal visual-similarity
 guarantee. `transitions-*.json` records those measurements; matching crops are
 `transitions-before-neighborhood.png` and `transitions-after-neighborhood.png`.
-The pre-grouping version (`69b0c79`) verifies identical neighborhood lane geometry
-and a tight building-area budget. Checks require groups of 2-5 individual polygons
+The pre-grouping version (`69b0c79`) verifies preserved neighborhood routes and
+a tight building-area budget. Checks require groups of 2-5 individual polygons
 with positive-length party walls, detached fallbacks, clear end passages, and no
 overlaps. `grouping-*.json` records group counts and matching-district areas;
 `grouping-before-neighborhood.png` and `grouping-after-neighborhood.png` provide
 same-seed visual crops. Test reference servers explicitly close their connections
 after captures to avoid waiting indefinitely on browser HTTP teardown.
+The pre-hierarchy version (`80d6a85`) verifies preserved route placement and
+junction connectivity separately from the intended width changes. Tests measure
+reserved polygons against role widths, require narrower connectors and passages,
+check building clearance and access, and bound same-district building-area changes
+to 3%. The fixed fixtures change building area by less than 1%. Reports are
+`hierarchy-*.json`; matching visual crops are `hierarchy-before-neighborhood.png`
+and `hierarchy-after-neighborhood.png`.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 

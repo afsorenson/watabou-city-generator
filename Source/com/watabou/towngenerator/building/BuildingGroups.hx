@@ -51,7 +51,7 @@ class BuildingGroups {
 				continue;
 			}
 			var sharedBack = front + (minimumBack - front) * 0.76;
-			var endGap = Math.min( 0.45, Math.max( 0.18, (bounds[0].right - bounds[0].left) * 0.1 ) );
+			var endGap = StreetHierarchy.passage( bounds[0].right - bounds[0].left );
 			var replacements:Array<Polygon> = [];
 			var owners:Array<Polygon> = [];
 			var oldArea = 0.0;

@@ -16,6 +16,7 @@ class BlockFrontage {
 		model.frontageLanes = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLanePaths = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLaneKinds = [for (patch in model.patches) new Array<String>()];
+		model.frontageLaneWidths = [for (patch in model.patches) new Array<Float>()];
 		model.frontageTransitions = [for (patch in model.patches) null];
 		model.frontageGroupIds = [for (patch in model.patches) new Array<Int>()];
 		model.frontageGroupPassages = [for (patch in model.patches) new Array<Polygon>()];
@@ -58,6 +59,8 @@ class BlockFrontage {
 			var lotWidth = Math.max( 1.2, Math.sqrt( lotArea ) * 0.9 );
 			var lotDepth = Math.max( 1.4, Math.sqrt( lotArea ) * 1.05 );
 			var laneWidth = Math.min( 0.8, Math.max( 0.35, lotWidth * 0.12 ) );
+			var spineWidth = StreetHierarchy.spine( lotWidth );
+			var connectorWidth = StreetHierarchy.connector( lotWidth );
 			var columns = Std.int( Math.max( 1, Math.ceil( (maxSide - minSide) / (lotWidth * 4 + laneWidth) ) ) );
 			var rows = Std.int( Math.max( 2, Math.ceil( (maxDepth - minDepth) / (lotDepth * 2 + laneWidth) ) ) );
 			var cellWidth = (maxSide - minSide) / columns;
@@ -79,23 +82,26 @@ class BlockFrontage {
 			var lanes:Array<Polygon> = [];
 			var paths:Array<Polygon> = [];
 			var kinds:Array<String> = [];
+			var widths:Array<Float> = [];
 			for (laneIndex in 1...rows) {
 				var localPath = new Polygon( [for (index in 0...knots.length) new Point( knots[index], profile[laneIndex][index] )] );
 				paths.push( toWorld( localPath, center, axis ) );
-				var outline = [for (point in localPath) new Point( point.x, point.y - laneWidth / 2 )];
-				var upper = [for (point in localPath) new Point( point.x, point.y + laneWidth / 2 )];
+				var outline = [for (point in localPath) new Point( point.x, point.y - spineWidth / 2 )];
+				var upper = [for (point in localPath) new Point( point.x, point.y + spineWidth / 2 )];
 				upper.reverse();
 				lanes.push( toWorld( new Polygon( outline.concat( upper ) ), center, axis ) );
 				kinds.push( "spine" );
+				widths.push( spineWidth );
 			}
 			for (row in 0...rows) {
 				for (laneIndex in 1...columns) {
 					var laneSide = bandCuts[row][laneIndex];
-					var startDepth = row == 0 ? minDepth - 1 : profileAt( knots, profile[row], laneSide ) - laneWidth / 2;
-					var endDepth = row == rows - 1 ? maxDepth + 1 : profileAt( knots, profile[row + 1], laneSide ) + laneWidth / 2;
-					lanes.push( quad( center, axis, laneSide - laneWidth / 2, laneSide + laneWidth / 2, startDepth, endDepth ) );
+					var startDepth = row == 0 ? minDepth - 1 : profileAt( knots, profile[row], laneSide ) - spineWidth / 2;
+					var endDepth = row == rows - 1 ? maxDepth + 1 : profileAt( knots, profile[row + 1], laneSide ) + spineWidth / 2;
+					lanes.push( quad( center, axis, laneSide - connectorWidth / 2, laneSide + connectorWidth / 2, startDepth, endDepth ) );
 					paths.push( toWorld( new Polygon( [new Point( laneSide, startDepth ), new Point( laneSide, endDepth )] ), center, axis ) );
 					kinds.push( "connector" );
+					widths.push( connectorWidth );
 				}
 			}
 			var access = lanes[0];
@@ -108,15 +114,15 @@ class BlockFrontage {
 			var groupPassages:Array<Polygon> = [];
 			for (row in 0...rows) {
 				for (column in 0...columns) {
-					var left = bandCuts[row][column] + (column == 0 ? 0.08 : laneWidth / 2);
-					var right = bandCuts[row][column + 1] - (column == columns - 1 ? 0.08 : laneWidth / 2);
+					var left = bandCuts[row][column] + (column == 0 ? 0.08 : connectorWidth / 2);
+					var right = bandCuts[row][column + 1] - (column == columns - 1 ? 0.08 : connectorWidth / 2);
 					var cellKnots = [left];
 					for (side in knots) if (side > left && side < right) cellKnots.push( side );
 					cellKnots.push( right );
 					var lower = [for (side in cellKnots) new Point( side,
-						profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : laneWidth / 2) )];
+						profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : spineWidth / 2) )];
 					var upper = [for (side in cellKnots) new Point( side,
-						profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : laneWidth / 2) )];
+						profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : spineWidth / 2) )];
 					var front = Math.POSITIVE_INFINITY;
 					var back = Math.NEGATIVE_INFINITY;
 					for (point in lower) front = Math.min( front, point.y );
@@ -152,8 +158,8 @@ class BlockFrontage {
 							var plotFront = Math.NEGATIVE_INFINITY;
 							var plotBack = Math.POSITIVE_INFINITY;
 							for (side in plotSides) {
-								var lowerDepth = profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : laneWidth / 2);
-								var upperDepth = profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : laneWidth / 2);
+								var lowerDepth = profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : spineWidth / 2);
+								var upperDepth = profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : spineWidth / 2);
 								plotFront = Math.max( plotFront, lowerDepth + (upperDepth - lowerDepth) * rowFractions[lotRow] );
 								plotBack = Math.min( plotBack, lowerDepth + (upperDepth - lowerDepth) * rowFractions[lotRow + 1] );
 							}
@@ -198,6 +204,7 @@ class BlockFrontage {
 			model.frontageLanes[patchIndex] = lanes;
 			model.frontageLanePaths[patchIndex] = paths;
 			model.frontageLaneKinds[patchIndex] = kinds;
+			model.frontageLaneWidths[patchIndex] = widths;
 			model.frontageTransitions[patchIndex] = transitions;
 			model.frontageGroupIds[patchIndex] = groupIds;
 			model.frontageGroupPassages[patchIndex] = groupPassages;

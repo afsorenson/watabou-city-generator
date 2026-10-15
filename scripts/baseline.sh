@@ -49,4 +49,13 @@ cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
 cp -R Export/html5/bin/. "$ROOT/.toolchain/grouping-reference/"
+cd "$ROOT"
+mkdir -p .toolchain/hierarchy-reference-source .toolchain/hierarchy-reference
+git archive 80d6a85 | tar -x -C .toolchain/hierarchy-reference-source
+cd .toolchain/hierarchy-reference-source
+haxelib run lime build html5
+cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
+cp -R Export/html5/bin/. "$ROOT/.toolchain/hierarchy-reference/"
 printf 'Built untouched upstream reference.\n'
