@@ -48,6 +48,42 @@ function polygonArea(ring) {
   return Math.abs(area) / 2;
 }
 
+async function buildingArea(page) {
+  const polygons = await page.evaluate(() => window.__testModel.patches.flatMap(
+    patch => patch.ward.geometry.map(polygon => polygon.map(point => [point.x, point.y]))));
+  return polygons.reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+}
+
+async function checkFrontage(page) {
+  const fixture = await page.evaluate(() => {
+    const parcel = [[0, 0], [12, 0], [9, 10], [3, 10]];
+    const block = [[-2, -2], [14, -2], [14, 20], [-2, 20]];
+    const result = window.__testFootprint(
+      parcel.map(point => new window.__testPoint(...point)),
+      block.map(point => new window.__testPoint(...point)), 9);
+    return result.map(point => [point.x, point.y]);
+  });
+  assert.ok(Math.min(...fixture.map(point => point[1])) <= 0.2,
+    'A tapered street-facing parcel must keep its building at the front setback');
+  assert.ok(polygonArea(fixture) > 55, 'Independent width/depth fitting must avoid excessive shrinkage');
+  assert.equal(fixture.length, 4, 'Frontage fixture must remain rectangular');
+  const fallback = await page.evaluate(() => {
+    const parcel = [[5, 0], [17, 12], [15, 14], [3, 2]];
+    const block = [[-10, -2], [30, -2], [30, 40], [-10, 40]];
+    return [parcel, parcel.slice(2).concat(parcel.slice(0, 2))].map(vertices => {
+      const result = window.__testFootprint(vertices.map(point => new window.__testPoint(...point)),
+        block.map(point => new window.__testPoint(...point)), 9);
+      return result.map(point => [point.x, point.y]);
+    });
+  });
+  for (let index = 0; index < fallback[0].length; index += 1) {
+    assert.ok(Math.hypot(fallback[0][index][0] - fallback[1][index][0],
+      fallback[0][index][1] - fallback[1][index][1]) < 1e-7,
+    'Long-edge fallback must not reverse frontage when polygon starting vertex changes');
+  }
+  console.log('PASS: tapered-parcel frontage setback and occupied area');
+}
+
 async function checkFootprints(page) {
   const pairs = await page.evaluate(() => {
     const model = window.__testModel;
@@ -126,7 +162,10 @@ try {
     const source = await response.text();
     const assignment = 'com_watabou_towngenerator_building_Model.instance = this;';
     assert.ok(source.includes(assignment), 'Test instrumentation must find the original model assignment');
-    await route.fulfill({ response, body: source.replace(assignment, `${assignment} window.__testModel = this;`) });
+    await route.fulfill({ response, body: source.replace(assignment,
+      `${assignment} window.__testModel = this; window.__testPoint = openfl_geom_Point;
+      window.__testFootprint = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
+        ? null : com_watabou_towngenerator_building_BuildingFootprints.create;`) });
   });
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
@@ -224,6 +263,19 @@ try {
     const counts = await checkFootprints(page);
     articulated += counts.lShapes + counts.stepped;
     console.log(`PASS: size ${size} contained footprints: ${JSON.stringify(counts)}`);
+    await checkFrontage(page);
+    const currentArea = await buildingArea(page);
+    const previous = await startServer({ root: resolve('.toolchain/footprints-reference'), port: 0 });
+    try {
+      await capture(page, `${previous.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=footprints`,
+        `test-results/previous-footprints-${size}.png`);
+      const previousArea = await buildingArea(page);
+      assert.ok(currentArea > previousArea * 1.05, 'Frontage placement must improve occupied area over centroid-only fitting');
+      console.log(`PASS: size ${size} building area improved ${((currentArea / previousArea - 1) * 100).toFixed(1)}%`);
+    } finally {
+      await new Promise(resolveClose => previous.server.close(resolveClose));
+    }
+    await capture(page, `${address}&buildings=footprints`);
     const footprintHash = await geometryHash(page);
     await page.reload();
     await page.waitForFunction(() => window.cityGenerator);

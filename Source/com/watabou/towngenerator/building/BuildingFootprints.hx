@@ -25,7 +25,12 @@ class BuildingFootprints {
 		var frontage = nearestEdge( block, center );
 		var rectangle = inscribed( parcel, center, frontage );
 		if (rectangle.square < parcel.square * 0.38) {
-			var alternative = inscribed( parcel, center, longestEdge( parcel ) );
+			var alternativeAxis = longestEdge( parcel );
+			if (alternativeAxis.x * frontage.x + alternativeAxis.y * frontage.y < 0) {
+				alternativeAxis.x = -alternativeAxis.x;
+				alternativeAxis.y = -alternativeAxis.y;
+			}
+			var alternative = inscribed( parcel, center, alternativeAxis );
 			if (alternative.square > rectangle.square) rectangle = alternative;
 		}
 		if (rectangle.square < 0.05) return parcel;
@@ -99,23 +104,57 @@ class BuildingFootprints {
 			minDepth = Math.min( minDepth, depth );
 			maxDepth = Math.max( maxDepth, depth );
 		}
-		var halfWidth = (maxSide - minSide) / 2;
-		var halfDepth = (maxDepth - minDepth) / 2;
-		var setback = Math.min( 0.28, Math.sqrt( parcel.square ) * 0.045 );
-		var fit = 1.0;
+		var spanWidth = maxSide - minSide;
+		var spanDepth = maxDepth - minDepth;
+		var setback = Math.min( 0.18, Math.sqrt( parcel.square ) * 0.03 );
+		var constraints = [];
 		parcel.forEdge( function( start, end ) {
 			var edge = end.subtract( start );
 			var edgeLength = edge.length;
 			if (edgeLength < 0.000001) return;
-			var clearance = (edge.x * (center.y - start.y) - edge.y * (center.x - start.x)) / edgeLength;
-			var extent = (Math.abs( edge.x * axis.y - edge.y * axis.x ) * halfWidth
-				+ Math.abs( edge.x * normal.y - edge.y * normal.x ) * halfDepth) / edgeLength;
-			if (extent > 0) fit = Math.min( fit, Math.max( 0, clearance - setback ) / extent );
+			constraints.push( {
+				side: (edge.x * axis.y - edge.y * axis.x) / edgeLength,
+				depth: (edge.x * normal.y - edge.y * normal.x) / edgeLength,
+				clearance: (edge.x * (center.y - start.y) - edge.y * (center.x - start.x)) / edgeLength
+			} );
 		} );
-		var width = halfWidth * fit;
-		var depth = halfDepth * fit;
+		var bestScore = -1.0;
+		var bestSide = 0.0;
+		var bestDepth = 0.0;
+		var width = 0.0;
+		var depth = 0.0;
+		for (frontOffset in [0.0, 0.06, 0.12, 0.2]) {
+			var front = minDepth + setback + spanDepth * frontOffset;
+			for (depthStep in 0...14) {
+				var halfDepth = (spanDepth - setback * 2 - spanDepth * frontOffset) * (0.22 + depthStep * 0.06) / 2;
+				if (halfDepth <= 0) continue;
+				var depthCenter = front + halfDepth;
+				for (sideStep in 0...7) {
+					var sideCenter = sideStep == 0 ? 0.0 : minSide + spanWidth * (0.2 + (sideStep - 1) * 0.12);
+					var halfWidth = spanWidth / 2;
+					for (constraint in constraints) {
+						var available = constraint.clearance + constraint.side * sideCenter
+							+ constraint.depth * depthCenter - setback - Math.abs( constraint.depth ) * halfDepth;
+						if (Math.abs( constraint.side ) > 0.000001)
+							halfWidth = Math.min( halfWidth, available / Math.abs( constraint.side ) );
+						else if (available < -0.000001) halfWidth = 0;
+					}
+					if (halfWidth <= 0) continue;
+					var score = halfWidth * halfDepth / (1 + frontOffset * 0.8);
+					if (score > bestScore) {
+						bestScore = score;
+						bestSide = sideCenter;
+						bestDepth = depthCenter;
+						width = halfWidth;
+						depth = halfDepth;
+					}
+				}
+			}
+		}
+		var position = new Point( center.x + bestSide * axis.x + bestDepth * normal.x,
+			center.y + bestSide * axis.y + bestDepth * normal.y );
 		return new Polygon( [for (corner in [new Point( -1, -1 ), new Point( 1, -1 ), new Point( 1, 1 ), new Point( -1, 1 )])
-			new Point( center.x + corner.x * width * axis.x + corner.y * depth * normal.x,
-				center.y + corner.x * width * axis.y + corner.y * depth * normal.y )] );
+			new Point( position.x + corner.x * width * axis.x + corner.y * depth * normal.x,
+				position.y + corner.x * width * axis.y + corner.y * depth * normal.y )] );
 	}
 }

@@ -75,12 +75,16 @@ http://127.0.0.1:8788/?size=40&seed=682063530&walls=1&buildings=footprints
 
 Footprints mode runs after original city generation. Common residential and
 commercial ward parcels receive inset rectangles, with L-shaped and stepped
-variants for sufficiently large buildings. Orientation favors the closest city
-block edge, falling back to the parcel's long edge where needed to retain useful
-building area. It does not consume the original generator's random sequence.
+variants for sufficiently large buildings. Placement favors the closest city
+block edge and searches building depth and sideways position independently,
+rather than uniformly shrinking a rectangle at the parcel centroid. The fit
+balances occupied area with a preference for a small front setback, using tighter
+side gaps to produce denser frontage. Long-edge fallback preserves the same
+front-facing direction. All candidates remain inside their original parcels.
+It does not consume the original generator's random sequence.
 Concave or degenerate parcels, castles, landmarks, parks, and farms retain their
-original geometry. This is a first building-footprint pass, not the current
-Watabou implementation or a courtyard/frontage simulation.
+original geometry. This is a parcel-based frontage improvement, not the current
+Watabou implementation or a simulation of shared walls, access, and courtyards.
 
 The view and **Export PNG** use the same city-focused boundary: city patches
 and the castle, with an 8% margin for adjacent development. Distant farms and
@@ -105,6 +109,9 @@ wall overrides and reloads, size changes and regeneration, desktop/mobile layout
 and the decoded monochrome PNG. Footprint tests independently check containment
 using polygon-clipping, orthogonal corners, exact base-geometry preservation,
 mode switching, deterministic reloads, and desktop/mobile controls and exports.
+They also build the first footprint version (`291272b`) for same-seed occupied-area
+comparisons, and check a tapered parcel's front setback and long-edge fallback
+orientation. These checks measure the tested cities, not a universal density gain.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 
