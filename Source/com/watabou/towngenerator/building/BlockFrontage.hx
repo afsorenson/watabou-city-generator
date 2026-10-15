@@ -14,6 +14,8 @@ class BlockFrontage {
 		model.frontageAccess = [for (patch in model.patches) new Polygon()];
 		model.frontagePlots = [for (patch in model.patches) new Array<Polygon>()];
 		model.frontageLanes = [for (patch in model.patches) new Array<Polygon>()];
+		model.frontageLanePaths = [for (patch in model.patches) new Array<Polygon>()];
+		model.frontageLaneKinds = [for (patch in model.patches) new Array<String>()];
 		for (patchIndex in 0...model.patches.length) {
 			var patch = model.patches[patchIndex];
 			if (!patch.withinCity || !Std.is( patch.ward, CommonWard ) || patch.ward.geometry.length == 0) continue;
@@ -56,18 +58,41 @@ class BlockFrontage {
 			var rows = Std.int( Math.max( 2, Math.ceil( (maxDepth - minDepth) / (lotDepth * 2 + laneWidth) ) ) );
 			var cellWidth = (maxSide - minSide) / columns;
 			var cellDepth = (maxDepth - minDepth) / rows;
-			var sideCuts = [for (index in 0...columns + 1) minSide + cellWidth * (index +
-				(index == 0 || index == columns ? 0 : (((seed ^ (patchIndex * 73856093) ^ (index * 19349663)) & 0x7fffffff) % 21 - 10) / 100))];
 			var depthCuts = [for (index in 0...rows + 1) minDepth + cellDepth * (index +
 				(index == 0 || index == rows ? 0 : (((seed ^ (patchIndex * 19349663) ^ (index * 73856093)) & 0x7fffffff) % 21 - 10) / 100))];
+			var bandCuts = [for (row in 0...rows) [for (index in 0...columns + 1)
+				index == 0 ? minSide : (index == columns ? maxSide :
+				minSide + cellWidth * (index + (row % 2 == 0 ? -0.16 : 0.16) +
+				(((seed ^ (patchIndex * 19349663) ^ (index * 73856093)) & 0x7fffffff) % 11 - 5) / 100))]];
+			var projected = new Polygon( [for (point in block) new Point(
+				(point.x - center.x) * axis.x + (point.y - center.y) * axis.y,
+				(point.x - center.x) * normal.x + (point.y - center.y) * normal.y )] );
+			var knots = [minSide - 1];
+			for (index in 0...columns * 2 + 1) knots.push( minSide + (maxSide - minSide) * index / (columns * 2) );
+			knots.push( maxSide + 1 );
+			var profile = [for (cut in 0...rows + 1) [for (side in knots)
+				cut == 0 ? minDepth : (cut == rows ? maxDepth : boundaryDepth( projected, side, depthCuts[cut], minDepth, maxDepth ))]];
 			var lanes:Array<Polygon> = [];
+			var paths:Array<Polygon> = [];
+			var kinds:Array<String> = [];
 			for (laneIndex in 1...rows) {
-				var laneDepth = depthCuts[laneIndex];
-				lanes.push( quad( center, axis, minSide - 1, maxSide + 1, laneDepth - laneWidth / 2, laneDepth + laneWidth / 2 ) );
+				var localPath = new Polygon( [for (index in 0...knots.length) new Point( knots[index], profile[laneIndex][index] )] );
+				paths.push( toWorld( localPath, center, axis ) );
+				var outline = [for (point in localPath) new Point( point.x, point.y - laneWidth / 2 )];
+				var upper = [for (point in localPath) new Point( point.x, point.y + laneWidth / 2 )];
+				upper.reverse();
+				lanes.push( toWorld( new Polygon( outline.concat( upper ) ), center, axis ) );
+				kinds.push( "spine" );
 			}
-			for (laneIndex in 1...columns) {
-				var laneSide = sideCuts[laneIndex];
-				lanes.push( quad( center, axis, laneSide - laneWidth / 2, laneSide + laneWidth / 2, minDepth - 1, maxDepth + 1 ) );
+			for (row in 0...rows) {
+				for (laneIndex in 1...columns) {
+					var laneSide = bandCuts[row][laneIndex];
+					var startDepth = row == 0 ? minDepth - 1 : profileAt( knots, profile[row], laneSide ) - laneWidth / 2;
+					var endDepth = row == rows - 1 ? maxDepth + 1 : profileAt( knots, profile[row + 1], laneSide ) + laneWidth / 2;
+					lanes.push( quad( center, axis, laneSide - laneWidth / 2, laneSide + laneWidth / 2, startDepth, endDepth ) );
+					paths.push( toWorld( new Polygon( [new Point( laneSide, startDepth ), new Point( laneSide, endDepth )] ), center, axis ) );
+					kinds.push( "connector" );
+				}
 			}
 			var access = lanes[0];
 			var courtyard = new Polygon();
@@ -77,14 +102,24 @@ class BlockFrontage {
 			var plots:Array<Polygon> = [];
 			for (row in 0...rows) {
 				for (column in 0...columns) {
-					var left = sideCuts[column] + (column == 0 ? 0.08 : laneWidth / 2);
-					var right = sideCuts[column + 1] - (column == columns - 1 ? 0.08 : laneWidth / 2);
-					var front = depthCuts[row] + (row == 0 ? 0.08 : laneWidth / 2);
-					var back = depthCuts[row + 1] - (row == rows - 1 ? 0.08 : laneWidth / 2);
+					var left = bandCuts[row][column] + (column == 0 ? 0.08 : laneWidth / 2);
+					var right = bandCuts[row][column + 1] - (column == columns - 1 ? 0.08 : laneWidth / 2);
+					var cellKnots = [left];
+					for (side in knots) if (side > left && side < right) cellKnots.push( side );
+					cellKnots.push( right );
+					var lower = [for (side in cellKnots) new Point( side,
+						profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : laneWidth / 2) )];
+					var upper = [for (side in cellKnots) new Point( side,
+						profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : laneWidth / 2) )];
+					var front = Math.POSITIVE_INFINITY;
+					var back = Math.NEGATIVE_INFINITY;
+					for (point in lower) front = Math.min( front, point.y );
+					for (point in upper) back = Math.max( back, point.y );
+					upper.reverse();
+					var cell = toWorld( new Polygon( lower.concat( upper ) ), center, axis );
 					if (right - left < 0.8 || back - front < 0.8) continue;
 					var count = Std.int( Math.max( 1, Math.round( (right - left) / lotWidth ) ) );
 					var split = 0.42 + (((seed ^ (row * 19349663) ^ (column * 73856093)) & 0x7fffffff) % 17) / 100;
-					var seam = front + (back - front) * split;
 					for (lotRow in 0...2) {
 						var weights = [for (index in 0...count) 0.72 +
 							(((seed ^ (patchIndex * 73856093) ^ (row * 15485863) ^ (column * 19349663) ^ (lotRow * 49979687) ^ (index * 83492791)) & 0x7fffffff) % 57) / 100];
@@ -98,12 +133,29 @@ class BlockFrontage {
 							var plotLeft = cursor + 0.035;
 							var plotRight = cursor + width - 0.035;
 							cursor += width;
-							var plotFront = (lotRow == 0 ? front : seam) + 0.035;
-							var plotBack = (lotRow == 0 ? seam : back) - 0.035;
+							var plotSides = [plotLeft, plotRight];
+							for (side in knots) if (side > plotLeft && side < plotRight) plotSides.push( side );
+							var plotFront = Math.NEGATIVE_INFINITY;
+							var plotBack = Math.POSITIVE_INFINITY;
+							for (side in plotSides) {
+								var lowerDepth = profileAt( knots, profile[row], side ) + (row == 0 ? 0.08 : laneWidth / 2);
+								var upperDepth = profileAt( knots, profile[row + 1], side ) - (row == rows - 1 ? 0.08 : laneWidth / 2);
+								var separator = lowerDepth + (upperDepth - lowerDepth) * split;
+								plotFront = Math.max( plotFront, lotRow == 0 ? lowerDepth : separator );
+								plotBack = Math.min( plotBack, lotRow == 0 ? separator : upperDepth );
+							}
+							plotFront += 0.035;
+							plotBack -= 0.035;
+							if (plotBack - plotFront < 0.4) continue;
 							var lot = quad( center, axis, plotLeft, plotRight, plotFront, plotBack );
-							var clipped = clip( lot, block );
+							var clipped:Array<Polygon> = [];
+							for (part in clip( lot, cell )) clipped = clipped.concat( clip( part, block ) );
 							if (reserveCourtyard && !courtyardChosen && row == 1 && lotRow == 0 && lotIndex == 0 && clipped.length == 1) {
-								var court = clip( quad( center, axis, plotLeft, plotRight, front - laneWidth, plotBack ), block );
+								var courtOutline = toWorld( new Polygon( [
+									new Point( plotLeft, profileAt( knots, profile[row], plotLeft ) ),
+									new Point( plotRight, profileAt( knots, profile[row], plotRight ) ),
+									new Point( plotRight, plotBack ), new Point( plotLeft, plotBack )] ), center, axis );
+								var court = clip( courtOutline, block );
 								if (court.length == 1 && court[0].square > lotArea * 0.3) {
 									courtyard = court[0];
 									courtyardChosen = true;
@@ -128,8 +180,39 @@ class BlockFrontage {
 			model.frontageAccess[patchIndex] = access;
 			model.frontagePlots[patchIndex] = plots;
 			model.frontageLanes[patchIndex] = lanes;
+			model.frontageLanePaths[patchIndex] = paths;
+			model.frontageLaneKinds[patchIndex] = kinds;
 		}
 		#end
+	}
+
+	private static function boundaryDepth( boundary:Polygon, side:Float, depth:Float, minDepth:Float, maxDepth:Float ):Float {
+		var crossings:Array<Float> = [];
+		boundary.forEdge( function( start, end ) {
+			if ((start.x <= side && end.x > side) || (end.x <= side && start.x > side))
+				crossings.push( start.y + (end.y - start.y) * (side - start.x) / (end.x - start.x) );
+		} );
+		if (crossings.length < 2) return depth;
+		crossings.sort( function( first, second ) return first < second ? -1 : (first > second ? 1 : 0) );
+		var fraction = (depth - minDepth) / (maxDepth - minDepth);
+		var conformed = crossings[0] + fraction * (crossings[crossings.length - 1] - crossings[0]);
+		return depth * 0.76 + conformed * 0.24;
+	}
+
+	private static function profileAt( sides:Array<Float>, depths:Array<Float>, side:Float ):Float {
+		for (index in 1...sides.length) {
+			if (side <= sides[index]) {
+				var fraction = (side - sides[index - 1]) / (sides[index] - sides[index - 1]);
+				return depths[index - 1] + fraction * (depths[index] - depths[index - 1]);
+			}
+		}
+		return depths[depths.length - 1];
+	}
+
+	private static function toWorld( polygon:Polygon, center:Point, axis:Point ):Polygon {
+		return snap( new Polygon( [for (point in polygon) new Point(
+			center.x + point.x * axis.x - point.y * axis.y,
+			center.y + point.x * axis.y + point.y * axis.x )] ) );
 	}
 
 	private static function clip( subject:Polygon, boundary:Polygon ):Array<Polygon> {

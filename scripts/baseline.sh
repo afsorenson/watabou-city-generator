@@ -22,4 +22,13 @@ cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
 cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
 cp -R Export/html5/bin/. "$ROOT/.toolchain/coverage-reference/"
+cd "$ROOT"
+mkdir -p .toolchain/topology-reference-source .toolchain/topology-reference
+git archive fea8644 | tar -x -C .toolchain/topology-reference-source
+cd .toolchain/topology-reference-source
+haxelib run lime build html5
+cp Browser/index.html Browser/controls.css Browser/controls.js Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/icons" Export/html5/bin/
+cp -R "$ROOT/Export/html5/bin/vendor" Export/html5/bin/
+cp -R Export/html5/bin/. "$ROOT/.toolchain/topology-reference/"
 printf 'Built untouched upstream reference.\n'

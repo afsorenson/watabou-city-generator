@@ -241,6 +241,69 @@ async function checkBlockRows(page) {
     coverage: Number(coverage.toFixed(3)) };
 }
 
+async function checkNeighborhoodTopology(page) {
+  const districts = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.frontageBlocks.flatMap((block, index) => block.length ? [{
+      block: points(block), lanes: model.frontageLanes[index].map(points),
+      paths: model.frontageLanePaths[index].map(points), kinds: model.frontageLaneKinds[index],
+    }] : []);
+  });
+  const area = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+  let bends = 0;
+  let junctions = 0;
+  for (const { block, lanes, paths, kinds } of districts) {
+    const tolerance = polygonArea(block) * 1e-7;
+    assert.equal(paths.length, lanes.length);
+    assert.equal(kinds.length, lanes.length);
+    const active = lanes.map((lane, index) => ({ index, lane }))
+      .filter(({ lane }) => area(polygonClipping.intersection([lane], [block])) > tolerance);
+    const connected = new Set(active.filter(({ lane }) => area(polygonClipping.difference([lane], [block])) > tolerance)
+      .map(({ index }) => index));
+    const adjacency = new Map(active.map(({ index }) => [index, []]));
+    for (let first = 0; first < active.length; first += 1) {
+      for (let second = 0; second < first; second += 1) {
+        if (area(polygonClipping.intersection([active[first].lane], [active[second].lane], [block])) <= tolerance) continue;
+        adjacency.get(active[first].index).push(active[second].index);
+        adjacency.get(active[second].index).push(active[first].index);
+      }
+    }
+    const pending = [...connected];
+    while (pending.length) {
+      for (const neighbor of adjacency.get(pending.pop())) {
+        if (connected.has(neighbor)) continue;
+        connected.add(neighbor);
+        pending.push(neighbor);
+      }
+    }
+    assert.equal(connected.size, active.length, 'Every active neighborhood lane must connect to a block-boundary route');
+    for (const { index, lane } of active) {
+      const path = paths[index];
+      if (kinds[index] === 'spine') {
+        const start = path[0];
+        const end = path[path.length - 1];
+        const span = Math.hypot(end[0] - start[0], end[1] - start[1]);
+        if (path.some(point => Math.abs((end[0] - start[0]) * (point[1] - start[1])
+          - (end[1] - start[1]) * (point[0] - start[0])) / span > 0.02)) bends += 1;
+      } else {
+        const spines = adjacency.get(index).filter(neighbor => kinds[neighbor] === 'spine');
+        assert.ok(spines.length <= 2, 'Connectors must terminate at adjacent spines, not cross the full neighborhood');
+        for (const spine of spines) {
+          const joint = polygonClipping.intersection([lane], [lanes[spine]], [block]);
+          for (const other of active.filter(candidate => candidate.index !== index && kinds[candidate.index] === 'connector')) {
+            assert.ok(area(polygonClipping.intersection(joint, [other.lane])) < tolerance,
+              'Opposite-band connectors must be staggered T-junctions rather than four-way crossings');
+          }
+          junctions += 1;
+        }
+      }
+    }
+  }
+  assert.ok(bends > 0, 'Test cities must include block-boundary-responsive lane bends');
+  return { bends, junctions };
+}
+
 function pixelVariation(bytes) {
   const image = PNG.sync.read(bytes);
   let differing = 0;
@@ -437,9 +500,39 @@ try {
     assert.equal(await geometryHash(page, true), original, 'Block Rows must preserve base parcels, streets, and walls');
     assert.notEqual(await geometryHash(page), original, 'Block Rows must replace building layout');
     const blockStats = await checkBlockRows(page);
+    const topology = await checkNeighborhoodTopology(page);
+    if (size >= 15) assert.ok(topology.junctions > 0, 'Larger test cities must include staggered T-junctions');
     assert.ok(blockStats.articulated > 0, 'Test cities must include distinct L-shaped or stepped block buildings');
     console.log(`PASS: size ${size} block rows: ${JSON.stringify(blockStats)}`);
+    console.log(`PASS: neighborhood topology: ${JSON.stringify(topology)}`);
     const after = await districtCoverage(page);
+    const topologyReference = await startServer({ root: resolve('.toolchain/topology-reference'), port: 0 });
+    try {
+      await capture(page, `${topologyReference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
+        `test-results/topology-before-${size}-${seed}.png`);
+      const before = await districtCoverage(page);
+      const shared = after.flatMap(district => {
+        const previous = before.find(candidate => candidate.index === district.index);
+        return previous ? [{ before: previous, after: district }] : [];
+      });
+      const totalArea = shared.reduce((sum, pair) => sum + pair.after.area, 0);
+      const previousCoverage = shared.reduce((sum, pair) => sum + pair.before.buildingArea, 0) / totalArea;
+      const currentCoverage = shared.reduce((sum, pair) => sum + pair.after.buildingArea, 0) / totalArea;
+      assert.ok(shared.length > 0 && currentCoverage >= previousCoverage * 0.9,
+        'Organic lanes must retain at least 90% of the previous dense version\'s same-district coverage');
+      await writeFile(`test-results/topology-${size}-${seed}.json`, JSON.stringify({ size, seed, walls,
+        previousCoverage, currentCoverage, topology, districts: shared }, null, 2));
+      console.log(`PASS: topology coverage ${(previousCoverage * 100).toFixed(1)}% -> ${(currentCoverage * 100).toFixed(1)}%`);
+      if (size === 40 && walls === 1) {
+        const previousDownload = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        await (await previousDownload).saveAs('test-results/topology-before-export.png');
+        await saveNeighborhood(await readFile('test-results/topology-before-export.png'),
+          'test-results/topology-before-neighborhood.png', 500, 450);
+      }
+    } finally {
+      await new Promise(resolveClose => topologyReference.server.close(resolveClose));
+    }
     const reference = await startServer({ root: resolve('.toolchain/coverage-reference'), port: 0 });
     try {
       await capture(page, `${reference.url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=frontage`,
@@ -493,6 +586,7 @@ try {
   await rowsExport.saveAs('test-results/block-rows-export.png');
   const rowsBytes = await readFile('test-results/block-rows-export.png');
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-neighborhood.png', 500, 450);
+  await saveNeighborhood(rowsBytes, 'test-results/topology-after-neighborhood.png', 500, 450);
   await saveNeighborhood(rowsBytes, 'test-results/coverage-after-south.png', 750, 1100);
   const rowsPng = PNG.sync.read(rowsBytes);
   assert.equal(rowsPng.width, 2048);

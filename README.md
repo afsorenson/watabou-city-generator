@@ -89,7 +89,11 @@ Watabou implementation or a simulation of shared walls, access, and courtyards.
 **Block Rows** is a separate experimental alternative. Eligible residential and
 commercial blocks are subdivided into smaller building groups with narrow secondary
 lanes. Lot sizes follow the district's original lot-area setting; widths, row depths,
-and lane spacing vary deterministically. Groups contain back-to-back building rows,
+and lane spacing vary deterministically. Internal connecting lanes bend gently
+with the block's boundary profile, and shorter connectors are offset between
+neighboring bands to form staggered T-junctions rather than a continuous grid.
+Each plot follows its local lane limits, preserving building density along bends.
+Groups contain back-to-back building rows,
 not a universal hollow perimeter. Only selected larger districts reserve a small
 lane-connected courtyard.
 
@@ -110,7 +114,8 @@ parcels stay unchanged. The original random sequence is not consumed. Switching
 back to Original or Footprints restores that mode at the same seed. This is an
 experimental subdivision layout, not a reproduction of modern Watabou algorithms
 or a full simulation of plot ownership and shared walls. It remains more regular
-than the current Watabou reference despite the seeded dimensional variation.
+than the current Watabou reference; boundary-responsive bends and staggered
+junctions are not a complete historical street-growth model.
 
 The view and **Export PNG** use the same city-focused boundary: city patches
 and the castle, with an 8% margin for adjacent development. Distant farms and
@@ -119,6 +124,24 @@ approach roads are cropped, not removed from the generated model. Exports remain
 Ground and streets are white, buildings gray, and outlines and walls black.
 Footprints-mode filenames end in `-footprints.png` so comparisons are distinct.
 Block Rows filenames end in `-frontage.png`.
+
+### Next Visual Refinements
+
+Prioritized follow-ups after neighborhood street topology:
+
+- [ ] **Soften district transitions.** Use shared street context to blend building
+	scale, orientation, and density near boundaries without erasing district identity.
+- [ ] **Vary building grouping.** Mix short attached frontages, detached buildings,
+	corner buildings, and small rear structures instead of uniformly isolated plots.
+- [ ] **Clarify street hierarchy.** Distinguish main routes, neighborhood connecting
+	lanes, and narrow access passages through consistent widths and frontage spacing.
+- [ ] **Refine outskirts.** Replace raw wedge-shaped roadside plots with distinct
+	buildings and a gradual density falloff, preserving farms and approach roads.
+
+For each update, retain fixed-seed city and neighborhood comparisons alongside the
+Watabou reference. Check coverage and access as well as containment; geometrically
+valid output alone does not establish visual similarity. Original and Footprints
+should remain available as unchanged comparison modes.
 
 ### Verification And Provenance
 
@@ -146,11 +169,19 @@ deterministic mode switching, and desktop/mobile PNG exports across several size
 and seeds, including cities with and without perimeter walls.
 The pre-subdivision version (`5f324c0`) is built for matching-seed comparisons.
 Per-district area and coverage reports are written to `test-results/coverage-*.json`.
-The fixed fixtures measure roughly 35-37% to 64-66% building coverage in shared
-districts; those figures are regression measurements, not a universal guarantee.
+The pre-topology subdivision fixtures measured roughly 35-37% to 64-66% building
+coverage in shared districts. Current topology fixtures measure about 60-63%,
+retaining over 90% of the dense version's coverage; these are regression
+measurements, not universal guarantees.
 Matching 600-pixel crops are saved as `coverage-before-neighborhood.png`,
 `coverage-after-neighborhood.png`, `coverage-before-south.png`, and
 `coverage-after-south.png` for visual comparison, not just numerical validation.
+The dense-grid version (`fea8644`) is also built for neighborhood-topology
+comparisons. Checks require real boundary-responsive bends, staggered T-junctions,
+short connectors, clear lanes, and connectivity from active lanes to block-boundary
+routes. `topology-*.json` records coverage and topology measurements, while
+`topology-before-neighborhood.png` and `topology-after-neighborhood.png` provide
+matching visual crops.
 Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 
