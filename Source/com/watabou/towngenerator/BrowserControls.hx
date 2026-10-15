@@ -12,19 +12,21 @@ class BrowserControls {
 			size: StateManager.size,
 			seed: StateManager.seed,
 			walls: Model.instance.wall != null,
+			footprints: StateManager.footprints,
 			exportPng: exportPng,
 			generate: generate
 		};
 		Browser.document.dispatchEvent( new js.html.Event( "city-ready" ) );
 	}
 
-	private static function generate( size:Int, walls:Null<Bool>, newSeed:Bool ):Void {
+	private static function generate( size:Int, walls:Null<Bool>, newSeed:Bool, footprintMode:Bool ):Void {
 		if (size < 6 || size > 40) return;
 		StateManager.size = size;
 		StateManager.walls = walls;
+		StateManager.footprints = footprintMode;
 		if (newSeed) StateManager.seed = -1;
 		StateManager.pushParams();
-		new Model( StateManager.size, StateManager.seed, StateManager.walls );
+		new Model( StateManager.size, StateManager.seed, StateManager.walls, StateManager.footprints );
 		Game.switchScene( TownScene );
 	}
 }

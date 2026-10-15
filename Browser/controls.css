@@ -22,17 +22,19 @@ h1 { margin: 0; font: 600 20px "Palatino Linotype", "Book Antiqua", serif; }
 label { display: flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
 input[type="number"] { width: 64px; height: 36px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; background: var(--paper); color: var(--ink); }
 input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+select { width: 116px; height: 36px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; color: var(--ink); background: var(--paper); }
 button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 4px; font: 500 13px "Avenir Next", "Helvetica Neue", sans-serif; color: var(--ink); background: var(--paper); cursor: pointer; white-space: nowrap; }
 button:hover { background: #eaf0ec; border-color: #a7b8ae; }
 button:disabled { opacity: 0.45; cursor: wait; }
 button img { width: 17px; height: 17px; }
-input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #openfl-content { flex: 1; min-height: 0; width: 100%; position: relative; overflow: hidden; background: var(--paper); }
 canvas { display: block; }
 @media (max-width: 700px) {
   .toolbar { padding: 10px 12px; gap: 10px 12px; }
   .identity { flex-basis: 100%; justify-content: space-between; margin: 0; }
-  .settings { flex: 1; gap: 12px; }
+  .settings { flex: 1; flex-wrap: wrap; gap: 10px; }
+  .building-setting { flex-basis: 100%; }
   .actions { gap: 8px; }
   button { width: 36px; padding: 0; }
   button span { display: none; }

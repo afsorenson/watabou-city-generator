@@ -22,7 +22,7 @@ class Main extends Game {
 		uiFont.letterSpacing = 1;
 		uiFont.baseLine = 8;
 
-		new Model( StateManager.size, StateManager.seed, StateManager.walls );
+		new Model( StateManager.size, StateManager.seed, StateManager.walls, StateManager.footprints );
 
 		super( TownScene );
 	}

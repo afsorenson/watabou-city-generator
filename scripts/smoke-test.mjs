@@ -5,6 +5,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
+import polygonClipping from 'polygon-clipping';
 import { startServer } from './serve.mjs';
 
 await mkdir('test-results', { recursive: true });
@@ -15,14 +16,14 @@ const browser = await chromium.launch({
 });
 const errors = [];
 
-async function geometryHash(page) {
-  const snapshot = await page.evaluate(() => {
+async function geometryHash(page, useParcels = false) {
+  const snapshot = await page.evaluate(useParcels => {
     const model = window.__testModel;
     const points = polygon => polygon.map(point => [point.x, point.y]);
     return JSON.stringify({
-      patches: model.patches.map(patch => ({
+      patches: model.patches.map((patch, index) => ({
         shape: points(patch.shape),
-        geometry: (patch.ward.geometry ?? []).map(points),
+        geometry: ((useParcels ? model.footprintParcels[index] : null) ?? patch.ward.geometry ?? []).map(points),
         withinCity: patch.withinCity,
         withinWalls: patch.withinWalls,
       })),
@@ -34,8 +35,54 @@ async function geometryHash(page) {
         towers: points(model.wall.towers),
       } : null,
     });
-  });
+  }, useParcels);
   return createHash('sha256').update(snapshot).digest('hex');
+}
+
+function polygonArea(ring) {
+  let area = 0;
+  for (let index = 0; index < ring.length; index += 1) {
+    const next = ring[(index + 1) % ring.length];
+    area += ring[index][0] * next[1] - next[0] * ring[index][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+async function checkFootprints(page) {
+  const pairs = await page.evaluate(() => {
+    const model = window.__testModel;
+    const points = polygon => polygon.map(point => [point.x, point.y]);
+    return model.patches.flatMap((patch, patchIndex) => patch.ward.geometry.map((footprint, index) => ({
+      footprint: points(footprint),
+      parcel: points(model.footprintParcels[patchIndex][index]),
+    })));
+  });
+  const counts = { rectangles: 0, lShapes: 0, stepped: 0 };
+  for (const { footprint, parcel } of pairs) {
+    if (JSON.stringify(footprint) === JSON.stringify(parcel)) continue;
+    assert.ok(footprint.every(point => point.every(Number.isFinite)), 'Footprint coordinates must be finite');
+    const area = polygonArea(footprint);
+    assert.ok(area > 0 && area < polygonArea(parcel), 'Footprint must leave space inside its parcel');
+    const outside = polygonClipping.difference([footprint], [parcel]);
+    const outsideArea = outside.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+    assert.ok(outsideArea < 1e-7 * polygonArea(parcel), 'Footprint must remain within its original parcel');
+    for (let index = 0; index < footprint.length; index += 1) {
+      const previous = footprint[(index + footprint.length - 1) % footprint.length];
+      const current = footprint[index];
+      const next = footprint[(index + 1) % footprint.length];
+      const incoming = [current[0] - previous[0], current[1] - previous[1]];
+      const outgoing = [next[0] - current[0], next[1] - current[1]];
+      const dot = incoming[0] * outgoing[0] + incoming[1] * outgoing[1];
+      assert.ok(Math.abs(dot) < 1e-7 * Math.hypot(...incoming) * Math.hypot(...outgoing),
+        'New footprints must have orthogonal corners');
+    }
+    if (footprint.length === 4) counts.rectangles += 1;
+    else if (footprint.length === 6) counts.lShapes += 1;
+    else if (footprint.length === 8) counts.stepped += 1;
+    else assert.fail('Unexpected footprint shape');
+  }
+  assert.ok(counts.rectangles > 0, 'Footprint mode must change eligible building parcels');
+  return counts;
 }
 
 function pixelVariation(bytes) {
@@ -163,6 +210,52 @@ try {
   await page.getByLabel('Walls', { exact: true }).check();
   assert.equal(new URL(page.url()).searchParams.get('custom'), 'kept');
   assert.equal(new URL(page.url()).hash, '#map');
+
+  let articulated = 0;
+  for (const [size, seed, walls] of [[6, 42, 0], [15, 682063530, 1], [40, 682063530, 1]]) {
+    const address = `${url}/?size=${size}&seed=${seed}&walls=${walls}`;
+    await capture(page, address);
+    const original = await geometryHash(page);
+    await page.getByLabel('Buildings', { exact: true }).selectOption('footprints');
+    assert.equal(await geometryHash(page, true), original, 'Footprints must not change parcels, streets, roads, or walls');
+    assert.notEqual(await geometryHash(page), original, 'Footprint mode must change building outlines');
+    assert.equal(new URL(page.url()).searchParams.get('seed'), String(seed));
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
+    const counts = await checkFootprints(page);
+    articulated += counts.lShapes + counts.stepped;
+    console.log(`PASS: size ${size} contained footprints: ${JSON.stringify(counts)}`);
+    const footprintHash = await geometryHash(page);
+    await page.reload();
+    await page.waitForFunction(() => window.cityGenerator);
+    assert.equal(await geometryHash(page), footprintHash, 'Footprints must reproduce after reload');
+    assert.equal(await page.getByLabel('Buildings', { exact: true }).inputValue(), 'footprints');
+    await page.getByLabel('Buildings', { exact: true }).selectOption('original');
+    assert.equal(await geometryHash(page), original, 'Original mode must restore the exact original geometry');
+  }
+  assert.ok(articulated > 0, 'Footprints must include articulated L-shaped or stepped buildings');
+
+  const footprintUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=footprints`;
+  await capture(page, footprintUrl, 'test-results/footprints-desktop.png');
+  const footprintDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+  const footprintExport = await footprintDownload;
+  assert.equal(footprintExport.suggestedFilename(), 'city-40-682063530-walled-footprints.png');
+  await footprintExport.saveAs('test-results/footprints-export.png');
+  const footprintPng = PNG.sync.read(await readFile('test-results/footprints-export.png'));
+  assert.equal(footprintPng.width, 2048);
+  assert.equal(footprintPng.height, 2048);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await capture(page, footprintUrl, `test-results/footprints-mobile-${width}.png`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Building selector must fit mobile width');
+    const toolbar = await page.locator('.toolbar').boundingBox();
+    const canvas = await page.locator('canvas').first().boundingBox();
+    assert.ok(canvas.y >= toolbar.y + toolbar.height - 1, 'Building selector must not overlap the map');
+    await page.getByLabel('Walls', { exact: true }).uncheck();
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
+    await page.getByRole('button', { name: 'Generate a new city' }).click();
+    assert.equal(new URL(page.url()).searchParams.get('buildings'), 'footprints');
+  }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');
 } finally {

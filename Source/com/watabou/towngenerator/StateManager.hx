@@ -12,10 +12,12 @@ class StateManager {
 	private static inline var SIZE = "size";
 	private static inline var SEED = "seed";
 	private static inline var WALLS = "walls";
+	private static inline var BUILDINGS = "buildings";
 
 	public static var size	: Int = 40;
 	public static var seed	: Int = -1;
 	public static var walls : Null<Bool> = null;
+	public static var footprints : Bool = false;
 
 	public static function pullParams() {
 		#if html5
@@ -31,6 +33,7 @@ class StateManager {
 				case "0": false;
 				default: null;
 			};
+			footprints = params.get( BUILDINGS ) == "footprints";
 		}
 		#end
 	}
@@ -47,6 +50,8 @@ class StateManager {
 		params.set( SEED, Std.string( seed ) );
 		if (walls == null) params.delete_( WALLS );
 		else params.set( WALLS, walls ? "1" : "0" );
+		if (footprints) params.set( BUILDINGS, "footprints" );
+		else params.delete_( BUILDINGS );
 		var query:String = untyped params.toString();
 		var url = Browser.location.pathname + "?" + query + Browser.location.hash;
 		Browser.window.history.replaceState( {size: size, seed: seed, walls: walls}, getStateName(), url );

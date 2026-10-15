@@ -4,8 +4,9 @@
 
 This fork runs Watabou's older open-source engine locally on macOS. It is not
 the current hosted generator. It retains the original building and street
-generation, with monochrome presentation, city-focused framing, optional city
-walls, a local launcher, and PNG export.
+generation as the default, with an optional building-footprint pass, monochrome
+presentation, city-focused framing, optional city walls, a local launcher, and
+PNG export.
 Coastline constraints and background-image import are not implemented yet.
 
 ### Run On This Mac
@@ -63,11 +64,30 @@ disables them. URLs without `walls` retain the original engine's seeded random
 wall choice. Changing size preserves this automatic behavior until you explicitly
 toggle the checkbox. Changing either setting keeps the seed.
 
+**Buildings** switches between **Original** parcel-shaped buildings and the
+optional **Footprints** mode. Switching modes preserves the seed, size, walls,
+streets, and city blocks. `buildings=footprints` persists the choice in a URL;
+omitting it selects Original. For example:
+
+```text
+http://127.0.0.1:8788/?size=40&seed=682063530&walls=1&buildings=footprints
+```
+
+Footprints mode runs after original city generation. Common residential and
+commercial ward parcels receive inset rectangles, with L-shaped and stepped
+variants for sufficiently large buildings. Orientation favors the closest city
+block edge, falling back to the parcel's long edge where needed to retain useful
+building area. It does not consume the original generator's random sequence.
+Concave or degenerate parcels, castles, landmarks, parks, and farms retain their
+original geometry. This is a first building-footprint pass, not the current
+Watabou implementation or a courtyard/frontage simulation.
+
 The view and **Export PNG** use the same city-focused boundary: city patches
 and the castle, with an 8% margin for adjacent development. Distant farms and
 approach roads are cropped, not removed from the generated model. Exports remain
 2048 x 2048 with an additional 64-pixel minimum outer margin and no UI controls.
 Ground and streets are white, buildings gray, and outlines and walls black.
+Footprints-mode filenames end in `-footprints.png` so comparisons are distinct.
 
 ### Verification And Provenance
 
@@ -82,7 +102,10 @@ They build the untouched upstream commit
 street, road, and perimeter-wall geometry at three sizes without wall overrides.
 Presentation pixels intentionally differ. Tests also check seed repeatability,
 wall overrides and reloads, size changes and regeneration, desktop/mobile layout,
-and the decoded monochrome PNG. Screenshots and an example export go into ignored
+and the decoded monochrome PNG. Footprint tests independently check containment
+using polygon-clipping, orthogonal corners, exact base-geometry preservation,
+mode switching, deterministic reloads, and desktop/mobile controls and exports.
+Screenshots and example exports go into ignored
 `test-results/`. This checks the old engine, not parity with today's hosted app.
 
 The original GPL-3.0 license is preserved in `LICENSE`. Upstream history is
