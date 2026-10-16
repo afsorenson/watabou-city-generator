@@ -10,7 +10,8 @@
     "start": "node scripts/serve.mjs --open",
     "test": "npm run baseline && node scripts/smoke-test.mjs",
     "test:identity": "node scripts/smoke-test.mjs --identity-only",
-    "test:roofs": "node scripts/smoke-test.mjs --roofs-only"
+    "test:roofs": "node scripts/smoke-test.mjs --roofs-only",
+    "test:quality": "node scripts/smoke-test.mjs --quality-only"
   },
   "devDependencies": {
     "lucide-static": "0.468.0",

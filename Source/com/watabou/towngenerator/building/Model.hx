@@ -33,6 +33,9 @@ class Model {
 	public var frontageTransitions : Array<DistrictTransitions> = [];
 	public var frontageGroupIds : Array<Array<Int>> = [];
 	public var frontageGroupPassages : Array<Array<Polygon>> = [];
+	public var footprintQualityOriginals : Array<Array<Polygon>> = [];
+	public var footprintQualitySources : Array<Array<Int>> = [];
+	public var footprintQualityChanges : Array<{patchIndex:Int, sourceIndex:Int, reason:String, before:Polygon, after:Array<Polygon>}> = [];
 
 	// Small Town	6
 	// Large Town	10
@@ -99,6 +102,7 @@ class Model {
 		} while (instance == null);
 		if (blockFrontageMode) BlockFrontage.apply( this, seed );
 		else if (footprints) BuildingFootprints.apply( this, seed );
+		if (blockFrontageMode || footprints) FootprintQuality.apply( this );
 	}
 
 	private function build():Void {

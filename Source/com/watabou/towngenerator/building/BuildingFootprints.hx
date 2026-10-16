@@ -67,6 +67,32 @@ class BuildingFootprints {
 		return buildings;
 	}
 
+	public static function repairOutlier( parcel:Polygon ):Array<Polygon> {
+		if (parcel.length < 3 || parcel.square < 0.2) return [];
+		var rectangle = inscribed( parcel, parcel.centroid, longestEdge( parcel ), true );
+		var side = rectangle[1].subtract( rectangle[0] );
+		var inward = rectangle[3].subtract( rectangle[0] );
+		var width = side.length;
+		var depth = inward.length;
+		if (Math.min( width, depth ) < 0.35 || rectangle.square < 0.2) return [];
+		var horizontal = width >= depth;
+		var count = Std.int( Math.max( 1, Math.ceil( Math.max( width, depth ) / Math.min( width, depth ) / 4 ) ) );
+		if (count > 16) return [];
+		var buildings:Array<Polygon> = [];
+		for (index in 0...count) {
+			var gap = count == 1 ? 0.0 : Math.min( 0.04, 0.1 / (horizontal ? width : depth) );
+			var front = index / count + (index == 0 ? 0 : gap);
+			var back = (index + 1) / count - (index == count - 1 ? 0 : gap);
+			var outline = horizontal ? [new Point( front, 0 ), new Point( back, 0 ), new Point( back, 1 ), new Point( front, 1 )] :
+				[new Point( 0, front ), new Point( 1, front ), new Point( 1, back ), new Point( 0, back )];
+			var building = new Polygon( [for (point in outline) new Point(
+				rectangle[0].x + point.x * side.x + point.y * inward.x,
+				rectangle[0].y + point.x * side.y + point.y * inward.y )] );
+			if (building.square >= 0.2 && FootprintQuality.reason( building ) == null) buildings.push( building );
+		}
+		return buildings;
+	}
+
 	private static function articulate( rectangle:Polygon, variation:Int ):Polygon {
 		var width = Point.distance( rectangle[0], rectangle[1] );
 		var depth = Point.distance( rectangle[1], rectangle[2] );

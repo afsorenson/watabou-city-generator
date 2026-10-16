@@ -153,9 +153,26 @@ balances occupied area with a preference for a small front setback, using tighte
 side gaps to produce denser frontage. Long-edge fallback preserves the same
 front-facing direction. All candidates remain inside their original parcels.
 It does not consume the original generator's random sequence.
-Concave or degenerate parcels, castles, landmarks, parks, and farms retain their
-original geometry. This is a parcel-based frontage improvement, not the current
+Ordinary concave parcels, castles, landmarks, parks, and farms retain their
+original geometry, except for the explicit severe-outlier cleanup below. This is a parcel-based frontage improvement, not the current
 Watabou implementation or a simulation of shared walls, access, and courtyards.
+
+Both **Footprints** and **Block Rows** run a conservative footprint-quality pass.
+It flags triangular taper, convex corners below 22 degrees, extreme aspect ratios
+above 14:1, and degenerate/sliver geometry in common residential/commercial and
+military building wards. Plausible skewed polygons, rectangles, and L-shaped
+buildings are not normalized merely for being irregular. Flagged footprints are
+fitted with contained rectangles; long usable needles can become a bounded series
+of short footprints. The fitter attempts a conservative contained fit for concave
+outliers too. Outliers that cannot support the minimum usable dimensions are omitted.
+
+Original mode remains untouched. Castles, cathedrals, parks, markets, and farms are
+excluded, as are already-regenerated Block Rows and their attached groups. Streets,
+walls, lanes, district definitions, and all unflagged vertices remain unchanged.
+Cleanup is independent of Flat/Roofed rendering and consumes no generator randomness.
+This is a deliberately narrow outlier filter, not a complete architectural
+plausibility test or an organic-layout update. Some unusual but non-extreme shapes
+remain by design.
 
 **Block Rows** is a separate experimental alternative. Eligible residential and
 commercial blocks are subdivided into smaller building groups with narrow secondary
@@ -263,6 +280,23 @@ For just renderer and roof workflows after a build:
 ```sh
 npm run test:roofs
 ```
+
+For just footprint-quality fixtures, actual-seed audits, and exports:
+
+```sh
+npm run test:quality
+```
+
+Quality checks cover normal/skewed/L-shaped buildings, triangles, needles, acute
+corners, slivers, and rotated fixtures. Actual cities must preserve exact unflagged
+geometry, protected features, and source containment. Tests bound affected source
+footprints to 5% and total area loss to 5%; these are regression limits, not claims
+that every seed changes by those amounts. For seed 1091337103, the fixtures affect
+2/2494 source footprints in Footprints mode and 18/2425 in Block Rows, with less than
+0.3% total area loss. Each repair or omission is recorded in `quality-*.json`.
+Where the preceding build (`a5d4581`) is archived, its geometry must exactly match
+the pre-cleanup source. Matching `quality-before-*-neighborhood.png` and
+`quality-after-*-neighborhood.png` crops support visual review.
 
 Roof checks cover rotated rectangles and compound footprints, roof-plane coverage,
 nonoverlap and containment, model reuse and unchanged geometry, deterministic

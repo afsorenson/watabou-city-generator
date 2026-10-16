@@ -24,14 +24,15 @@ async function closeTestServer(server) {
   await new Promise(resolveClose => server.close(resolveClose));
 }
 
-async function geometryHash(page, useParcels = false) {
-  const snapshot = await page.evaluate(useParcels => {
+async function geometryHash(page, useParcels = false, beforeQuality = false) {
+  const snapshot = await page.evaluate(({ useParcels, beforeQuality }) => {
     const model = window.__testModel;
     const points = polygon => polygon.map(point => [point.x, point.y]);
     return JSON.stringify({
       patches: model.patches.map((patch, index) => ({
         shape: points(patch.shape),
-        geometry: ((useParcels ? model.footprintParcels[index] : null) ?? patch.ward.geometry ?? []).map(points),
+        geometry: ((beforeQuality ? model.footprintQualityOriginals[index] : null)
+          ?? (useParcels ? model.footprintParcels[index] : null) ?? patch.ward.geometry ?? []).map(points),
         withinCity: patch.withinCity,
         withinWalls: patch.withinWalls,
       })),
@@ -43,7 +44,7 @@ async function geometryHash(page, useParcels = false) {
         towers: points(model.wall.towers),
       } : null,
     });
-  }, useParcels);
+  }, { useParcels, beforeQuality });
   return createHash('sha256').update(snapshot).digest('hex');
 }
 
@@ -308,7 +309,7 @@ async function checkFootprints(page) {
     const points = polygon => polygon.map(point => [point.x, point.y]);
     return model.patches.flatMap((patch, patchIndex) => patch.ward.geometry.map((footprint, index) => ({
       footprint: points(footprint),
-      parcel: points(model.footprintParcels[patchIndex][index]),
+      parcel: points(model.footprintParcels[patchIndex][model.footprintQualitySources?.[patchIndex]?.[index] ?? index]),
     })));
   });
   const counts = { rectangles: 0, lShapes: 0, stepped: 0 };
@@ -345,7 +346,7 @@ async function checkBlockRows(page) {
     if (!model.wall) return true;
     const points = polygons => polygons.map(polygon => polygon.map(point => [point.x, point.y]));
     return model.patches.every((patch, index) => patch.withinWalls
-      || JSON.stringify(points(patch.ward.geometry)) === JSON.stringify(points(model.footprintParcels[index])));
+      || JSON.stringify(points(model.footprintQualityOriginals?.[index] ?? patch.ward.geometry)) === JSON.stringify(points(model.footprintParcels[index])));
   });
   assert.ok(preservesOutskirts, 'Block Rows must preserve original outside-wall development');
   const blocks = await page.evaluate(() => {
@@ -610,9 +611,13 @@ try {
       window.__testFrontageBuilding = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
         ? null : com_watabou_towngenerator_building_BuildingFootprints.fromFrontagePlot;
       window.__testRoofRenderer = typeof com_watabou_towngenerator_mapping_RoofRenderer === 'undefined'
-        ? null : com_watabou_towngenerator_mapping_RoofRenderer;`) });
+        ? null : com_watabou_towngenerator_mapping_RoofRenderer;
+      window.__testQuality = typeof com_watabou_towngenerator_building_FootprintQuality === 'undefined'
+        ? null : com_watabou_towngenerator_building_FootprintQuality;
+      window.__testRepair = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
+        ? null : com_watabou_towngenerator_building_BuildingFootprints.repairOutlier;`) });
   });
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only')) {
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
   const second = await capture(page, seedUrl, 'test-results/desktop-repeat.png');
@@ -971,7 +976,7 @@ try {
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   }
-  if (!process.argv.includes('--roofs-only')) {
+  if (!process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only')) {
   const restoreUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
   await capture(page, `${url}/?size=6&seed=2147483647&walls=0`);
   assert.ok(Number(new URL(page.url()).searchParams.get('seed')) >= 1
@@ -1100,7 +1105,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Seed and build controls must fit mobile width');
   console.log('PASS: compiled build identity, editable seed restoration, version-bound sharing, real-build comparison, matching crops and mobile layout');
   }
-  if (!process.argv.includes('--identity-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--quality-only')) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const roofUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`;
     await capture(page, roofUrl, 'test-results/roof-flat-desktop.png');
@@ -1299,6 +1304,120 @@ try {
         'An unsupported archived rendering style must not silently fall back to Flat');
     }
     console.log('PASS: compound roof plans, clipped planes, unchanged geometry, deterministic styles, viewport-independent PNG detail and sharing');
+  }
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only')) {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await capture(page, `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`);
+    const fixtures = await page.evaluate(() => {
+      const cases = [
+        { expected: null, points: [[0, 0], [8, 0], [8, 4], [0, 4]] },
+        { expected: null, points: [[0, 0], [8, 1], [7, 5], [1, 5]] },
+        { expected: null, points: [[0, 0], [8, 0], [8, 3], [3, 3], [3, 8], [0, 8]] },
+        { expected: 'taper', points: [[0, 0], [8, 0], [2, 6]] },
+        { expected: 'needle', points: [[0, 0], [40, 0], [40, 1], [0, 1]] },
+        { expected: 'acute-corner', points: [[0, 0], [10, 0], [0.5, 2], [0, 2]] },
+        { expected: 'sliver', points: [[0, 0], [5, 0], [5, 0.05], [0, 0.05]] },
+      ];
+      return cases.flatMap(fixture => [0, Math.PI / 5].map(angle => {
+        const polygon = fixture.points.map(point => new window.__testPoint(point[0] * Math.cos(angle) - point[1] * Math.sin(angle),
+          point[0] * Math.sin(angle) + point[1] * Math.cos(angle)));
+        const reason = window.__testQuality.reason(polygon);
+        const repaired = reason ? window.__testRepair(polygon) : [polygon];
+        return { expected: fixture.expected, reason, before: polygon.map(point => [point.x, point.y]),
+          after: repaired.map(part => ({ points: part.map(point => [point.x, point.y]), reason: window.__testQuality.reason(part) })) };
+      }));
+    });
+    const clippedArea = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
+    for (const fixture of fixtures) {
+      assert.equal(fixture.reason, fixture.expected, 'Quality classification must distinguish normal buildings from severe outliers');
+      if (!fixture.reason) assert.deepEqual(fixture.after[0].points, fixture.before, 'Plausible geometry must remain exact');
+      if (['taper', 'needle', 'acute-corner'].includes(fixture.reason)) assert.ok(fixture.after.length > 0,
+        `A repairable ${fixture.reason} fixture must produce contained buildings: ${JSON.stringify(fixture.before)}`);
+      for (const part of fixture.after) {
+        assert.equal(part.reason, null, 'Repairs must pass the same quality criteria');
+        assert.ok(clippedArea(polygonClipping.difference([part.points], [fixture.before])) < 1e-6,
+          'Fixture repairs must remain inside the source footprint');
+      }
+    }
+    for (const [size, seed, walls] of [[6, 42, 0], [15, 682063530, 1], [40, 1091337103, 1], [40, 123456, 0]]) {
+      for (const mode of ['footprints', 'frontage']) {
+        const address = `${url}/?size=${size}&seed=${seed}&walls=${walls}&buildings=${mode}`;
+        await capture(page, address);
+        const audit = await page.evaluate(() => {
+          const model = window.__testModel;
+          const points = polygon => polygon.map(point => [point.x, point.y]);
+          return {
+            total: model.footprintQualityOriginals.reduce((sum, polygons) => sum + polygons.length, 0),
+            changes: model.footprintQualityChanges.map(change => ({ ...change, before: points(change.before), after: change.after.map(points) })),
+            original: model.footprintQualityOriginals.map(polygons => polygons.map(points)),
+            current: model.patches.map(patch => patch.ward.geometry.map(points)),
+            sources: model.footprintQualitySources,
+            invalid: model.patches.flatMap((patch, patchIndex) => patch.ward.geometry.flatMap((polygon, index) =>
+              model.footprintQualityChanges.some(change => change.patchIndex === patchIndex
+                && change.sourceIndex === model.footprintQualitySources[patchIndex][index]) && window.__testQuality.reason(polygon)
+                ? [{ patchIndex, index }] : [])),
+            groupedBlocksChanged: model.footprintQualityChanges.some(change => model.frontageBlocks[change.patchIndex]?.length > 0),
+            protectedChanged: model.footprintQualityChanges.some(change => {
+              const label = model.patches[change.patchIndex].ward.getLabel();
+              return ['Castle', 'Cathedral', 'Park', 'Market', 'Farm'].includes(label);
+            }),
+          };
+        });
+        assert.equal(audit.invalid.length, 0);
+        assert.equal(audit.groupedBlocksChanged, false, 'Established block rows and group membership must remain untouched');
+        assert.equal(audit.protectedChanged, false, 'Landmarks and nonbuilding features must not be repaired');
+        assert.ok(audit.changes.length <= audit.total * 0.05, 'Cleanup must stay bounded to at most 5% of existing footprints in test cities');
+        for (const change of audit.changes) {
+          for (const replacement of change.after) {
+            assert.ok(clippedArea(polygonClipping.difference([replacement], [change.before])) < 1e-6,
+              'Actual city repairs must stay within the original footprint');
+          }
+        }
+        for (let patchIndex = 0; patchIndex < audit.current.length; patchIndex += 1) {
+          for (let index = 0; index < audit.current[patchIndex].length; index += 1) {
+            const sourceIndex = audit.sources[patchIndex][index];
+            const changed = audit.changes.some(change => change.patchIndex === patchIndex && change.sourceIndex === sourceIndex);
+            if (!changed) assert.deepEqual(audit.current[patchIndex][index], audit.original[patchIndex][sourceIndex],
+              'Every unflagged building must preserve exact vertex coordinates');
+          }
+        }
+        const oldArea = audit.original.flat().reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+        const newArea = audit.current.flat().reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+        assert.ok(newArea <= oldArea + 1e-5 && newArea >= oldArea * 0.95,
+          'The bounded cleanup must not expand source buildings or remove more than 5% of total footprint area in test cities');
+        await writeFile(`test-results/quality-${size}-${seed}-${mode}.json`, JSON.stringify({ ...audit, oldArea, newArea }, null, 2));
+        console.log(`PASS: quality ${mode} size ${size} seed ${seed}: ${audit.changes.length}/${audit.total} source footprints affected`);
+        const snapshot = await geometryHash(page);
+        await page.reload();
+        await page.waitForFunction(() => window.cityGenerator);
+        assert.equal(await geometryHash(page), snapshot, 'Footprint cleanup must reproduce after refresh');
+        await page.getByLabel('Rendering style', { exact: true }).selectOption('roofed');
+        assert.equal(await geometryHash(page), snapshot, 'Cleanup must not depend on rendering style');
+        const downloadPromise = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+        const exported = await downloadPromise;
+        await exported.saveAs(`test-results/quality-${size}-${seed}-${mode}.png`);
+        assert.ok(pixelVariation(await readFile(`test-results/quality-${size}-${seed}-${mode}.png`)) > 10000);
+        if (size === 40 && seed === 1091337103) {
+          const beforeQuality = await geometryHash(page, false, true);
+          const catalog = JSON.parse(await readFile('Export/html5/bin/builds.json', 'utf8'));
+          const previous = catalog.builds.find(build => build.commit === 'a5d4581' && !build.dirty);
+          if (previous) {
+            await capture(page, `${url}/${previous.url}?size=${size}&seed=${seed}&walls=${walls}&buildings=${mode}&style=roofed`);
+            assert.equal(await geometryHash(page), beforeQuality,
+              'Pre-cleanup geometry, streets, walls and original features must match the preceding engine exactly');
+            const oldDownload = page.waitForEvent('download');
+            await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+            await (await oldDownload).saveAs(`test-results/quality-before-${mode}.png`);
+            await saveNeighborhood(await readFile(`test-results/quality-before-${mode}.png`),
+              `test-results/quality-before-${mode}-neighborhood.png`, 420, 420);
+          }
+          await saveNeighborhood(await readFile(`test-results/quality-${size}-${seed}-${mode}.png`),
+            `test-results/quality-after-${mode}-neighborhood.png`, 420, 420);
+        }
+      }
+    }
+    console.log('PASS: bounded outlier-only cleanup, exact plausible/protected geometry, source containment, deterministic modes and roofed PNG export');
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');
