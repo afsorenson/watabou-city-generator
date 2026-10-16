@@ -80,6 +80,8 @@ class CityMap extends Sprite {
 		}
 
 		if (roofRenderer != null) addChild( details );
+		if (StateManager.diagnostic && model.frontageGrowthData != null && model.prototypePatchIndex >= 0)
+			addChild( new FrontageDiagnostic( model.frontageGrowthData ) );
 		for (patch in patches)
 			addChild( patch.hotArea );
 

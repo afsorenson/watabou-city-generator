@@ -2,6 +2,10 @@
 
 ## Local Mac Fork
 
+Measured rendering/generation performance findings and deferred optimization ideas
+are recorded in [docs/performance-findings-2026-10-16.md](docs/performance-findings-2026-10-16.md).
+Performance optimization is intentionally separate from the frontage-growth work.
+
 This fork runs Watabou's older open-source engine locally on macOS. It is not
 the current hosted generator. It retains the original building and street
 generation as the default, with optional Footprints and Block Rows modes, monochrome
@@ -188,6 +192,52 @@ applying the attached-frontage grouping pass. It does not simulate historical
 growth or terrain constraints. Review the enlarged Changed District comparison
 before deciding whether to generalize it.
 
+### Frontage-Driven Growth Preview
+
+In **Block Rows**, **Layout > Frontage Growth** enables a separate one-district
+experiment. It does not rotate or subdivide a neighborhood-wide row/column grid.
+The current implementation follows the coupled five-stage process:
+
+1. Identify real eligible perimeter street edges from the city's existing roads
+	and neighboring districts, excluding city-wall edges.
+2. Allocate bounded plots along available street frontage, using local district
+	lot sizes and storing each plot's owning street and explicit frontage segment.
+3. Find deep unserved land with polylabel and add connected access toward it,
+	preferring another street connection where a valid route exists.
+4. Release plots crossed by the new lane, update the remaining polygon/multipolygon
+	including exclusion holes, and reallocate newly created frontage. A numerically
+	invalid growth step is rolled back instead of corrupting claimed land.
+5. Fit distinct buildings inside the street-owned plots without overlaps or lane
+	obstruction. Remaining land stays explicit rather than being filled arbitrarily.
+
+```text
+http://127.0.0.1:8788/?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed&layout=frontage-growth
+```
+
+The user explicitly approved a sparser experimental preview: its own density floor
+is 80% of the standard district's building area, not the earlier prototype's 85%.
+Other modes and their safeguards are unchanged. At size 40, seed 1091337103,
+walls on, only district 38 changes. The current fixed fixture has 85 frontage-owned
+plots, 35 existing/grown street segments, and approximately 80.7% of its baseline
+building area. This is an architectural preview, not a density/visual-parity claim.
+Too few plots, unsuitable density, or a numerical failure retains Standard.
+
+**Style > Diagnostic** is available for Frontage Growth. Blue lines are streets,
+pale blue polygons are claimed plots, orange segments are frontage, green is
+remaining land, and pink marks exclusions. Buildings are gray. The legend is
+shown on the main view. The diagnostic redraw does not change generated geometry.
+Compare from a normal style opens Standard versus Frontage Growth; Compare from
+Diagnostic opens frontage-growth layouts on both sides so the shared style is
+meaningful. Changed District uses the same export crop on both panels.
+
+The domain generator accepts exclusion polygons and preserves holes in buildable
+land; tests require roads, plots, buildings, and remaining land to avoid forbidden
+areas. There is not yet an exclusion-drawing/background-image UI, and the isolated
+city integration currently selects a convex district. Routing considers bounded
+straight connections and can stop with residual unallocated land; this is not a
+complete historical growth or arbitrary-terrain pathfinding engine. Performance
+optimization remains deferred, and this new experiment can add geometry work.
+
 ### Building Modes
 
 **Buildings** switches between **Original** parcel-shaped buildings and the
@@ -360,6 +410,23 @@ For the isolated neighborhood prototype and its comparison workflow:
 ```sh
 npm run test:prototype
 ```
+
+For coupled frontage-growth, exclusion, and diagnostic workflows:
+
+```sh
+npm run test:frontage
+```
+
+Growth checks require exactly one changed district, exact surrounding/main-road
+and wall preservation, positive frontage on physically reachable streets, real
+plot retirement/reallocation, plot/building containment and nonoverlap, clear
+lanes, exclusion holes, the approved density floor, deterministic restoration,
+version-bound sharing, diagnostic-style independence, real comparisons, PNGs,
+and mobile layout. `test-results/frontage-growth-audit.json` records the graph,
+owned plots/frontages, events, and remaining land. Matching crop files are
+`frontage-before-neighborhood.png`, `frontage-after-neighborhood.png`, and
+`frontage-diagnostic-neighborhood.png`; the exclusion fixture is recorded in
+`frontage-exclusion-audit.json`.
 
 Prototype checks require exactly one changed district, exact preservation of
 surrounding buildings and lanes, clear connected roads, no building overlaps,

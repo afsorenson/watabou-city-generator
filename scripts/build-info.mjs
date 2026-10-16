@@ -58,8 +58,10 @@ window.saveAs = function(blob, name, options) {
   const id = `${commit}${dirty ? '-dirty' : ''}-${sourceHash.slice(0, 10)}`;
   const styles = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="render-style"')
     ? ['flat', 'roofed'] : ['flat'];
+  if ((await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('value="diagnostic"')) styles.push('diagnostic');
   const layouts = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="neighborhood-layout"')
     ? ['standard', 'prototype'] : ['standard'];
+  if ((await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('value="frontage-growth"')) layouts.push('frontage-growth');
   await writeJson(statePath, { id, commit, sourceHash, dirty, styles, layouts, legacy: false, builtAt: new Date().toISOString() });
   console.log(id);
 } else if (process.argv[2] === 'finish') {

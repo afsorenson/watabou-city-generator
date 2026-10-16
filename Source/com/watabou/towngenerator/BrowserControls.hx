@@ -24,7 +24,10 @@ class BrowserControls {
 			footprints: StateManager.footprints,
 			blockFrontage: StateManager.blockFrontage,
 			roofed: StateManager.roofed,
+			diagnostic: StateManager.diagnostic,
+			setDiagnostic: setDiagnostic,
 			prototype: StateManager.neighborhoodPrototype,
+			frontageGrowth: StateManager.frontageGrowth,
 			prototypePatch: Model.instance.prototypePatchIndex,
 			prototypeCrop: prototypeCrop,
 			setStyle: setStyle,
@@ -38,25 +41,34 @@ class BrowserControls {
 	private static function restoreSeed( seed:Int ):Void {
 		if (seed < 1 || seed > 2147483646 || seed != Math.floor( seed )) return;
 		StateManager.seed = seed;
-		generate( StateManager.size, StateManager.walls, false, StateManager.footprints, StateManager.blockFrontage, StateManager.neighborhoodPrototype );
+		generate( StateManager.size, StateManager.walls, false, StateManager.footprints, StateManager.blockFrontage, StateManager.neighborhoodPrototype, StateManager.frontageGrowth );
 	}
 
 	private static function setStyle( roofed:Bool ):Void {
+		StateManager.diagnostic = false;
 		StateManager.roofed = roofed;
 		StateManager.pushParams();
 		Game.switchScene( TownScene );
 	}
 
-	private static function generate( size:Int, walls:Null<Bool>, newSeed:Bool, footprintMode:Bool, blockFrontageMode=false, prototype=false ):Void {
+	private static function setDiagnostic():Void {
+		if (!StateManager.frontageGrowth) return;
+		StateManager.diagnostic = true; StateManager.roofed = false;
+		StateManager.pushParams(); Game.switchScene( TownScene );
+	}
+
+	private static function generate( size:Int, walls:Null<Bool>, newSeed:Bool, footprintMode:Bool, blockFrontageMode=false, prototype=false, frontageGrowth=false ):Void {
 		if (size < 6 || size > 40) return;
 		StateManager.size = size;
 		StateManager.walls = walls;
 		StateManager.footprints = footprintMode;
 		StateManager.blockFrontage = blockFrontageMode;
 		StateManager.neighborhoodPrototype = blockFrontageMode && prototype;
+		StateManager.frontageGrowth = blockFrontageMode && frontageGrowth;
+		if (!StateManager.frontageGrowth) StateManager.diagnostic = false;
 		if (newSeed) StateManager.seed = -1;
 		StateManager.pushParams();
-		new Model( StateManager.size, StateManager.seed, StateManager.walls, StateManager.footprints, StateManager.blockFrontage, StateManager.neighborhoodPrototype );
+		new Model( StateManager.size, StateManager.seed, StateManager.walls, StateManager.footprints, StateManager.blockFrontage, StateManager.neighborhoodPrototype, StateManager.frontageGrowth );
 		Game.switchScene( TownScene );
 	}
 }

@@ -617,9 +617,13 @@ try {
       window.__testRepair = typeof com_watabou_towngenerator_building_BuildingFootprints === 'undefined'
         ? null : com_watabou_towngenerator_building_BuildingFootprints.repairOutlier;
       window.__testPrototype = typeof com_watabou_towngenerator_building_NeighborhoodPrototype === 'undefined'
-        ? null : com_watabou_towngenerator_building_NeighborhoodPrototype;`) });
+        ? null : com_watabou_towngenerator_building_NeighborhoodPrototype;
+      window.__testFrontageGrowth = typeof com_watabou_towngenerator_building_FrontageNeighborhood === 'undefined'
+        ? null : com_watabou_towngenerator_building_FrontageNeighborhood;
+      window.__testLandGeometry = typeof com_watabou_towngenerator_building_FrontageNeighborhood === 'undefined'
+        ? null : com_watabou_towngenerator_building_FrontageNeighborhood;`) });
   });
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
   const second = await capture(page, seedUrl, 'test-results/desktop-repeat.png');
@@ -978,7 +982,7 @@ try {
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   }
-  if (!process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only')) {
+  if (!process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
   const restoreUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
   await capture(page, `${url}/?size=6&seed=2147483647&walls=0`);
   assert.ok(Number(new URL(page.url()).searchParams.get('seed')) >= 1
@@ -1107,7 +1111,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Seed and build controls must fit mobile width');
   console.log('PASS: compiled build identity, editable seed restoration, version-bound sharing, real-build comparison, matching crops and mobile layout');
   }
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const roofUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`;
     await capture(page, roofUrl, 'test-results/roof-flat-desktop.png');
@@ -1307,7 +1311,7 @@ try {
     }
     console.log('PASS: compound roof plans, clipped planes, unchanged geometry, deterministic styles, viewport-independent PNG detail and sharing');
   }
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--prototype-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
     await page.setViewportSize({ width: 1200, height: 900 });
     await capture(page, `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`);
     const fixtures = await page.evaluate(() => {
@@ -1421,7 +1425,7 @@ try {
     }
     console.log('PASS: bounded outlier-only cleanup, exact plausible/protected geometry, source containment, deterministic modes and roofed PNG export');
   }
-  if (process.argv.includes('--prototype-only') || !process.argv.some(argument => /--(identity|roofs|quality)-only/.test(argument))) {
+  if (process.argv.includes('--prototype-only') || !process.argv.some(argument => /--(identity|roofs|quality|frontage)-only/.test(argument))) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const prototypeUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed`;
     const snapshot = () => page.evaluate(() => {
@@ -1603,6 +1607,167 @@ try {
     await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('prototype');
     assert.deepEqual((await snapshot()).buildings, prototype.buildings, 'Prototype must recover after a safely rejected attempt');
     console.log(`PASS: one-district prototype ${prototype.target}; connected lanes ${active.length}; T-junctions ${localTJunctions}; junction infill ${prototype.junctionBuildings}; coverage ${oldArea.toFixed(1)} -> ${newArea.toFixed(1)}; dominant orientation ${beforeOrientation.dominant.toFixed(3)} -> ${afterOrientation.dominant.toFixed(3)}`);
+  }
+  if (process.argv.includes('--frontage-only') || !process.argv.some(argument => /--(identity|roofs|quality|prototype)-only/.test(argument))) {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    const growthUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage&style=flat`;
+    const city = () => page.evaluate(() => {
+      const model = window.__testModel;
+      const points = polygon => polygon.map(point => [point.x, point.y]);
+      return { target: model.prototypePatchIndex, buildings: model.patches.map(patch => patch.ward.geometry.map(points)),
+        streets: model.streets.map(points), roads: model.roads.map(points), wall: points(model.wall.shape),
+        failure: model.prototypeFailure, attempt: model.prototypeAttempt };
+    });
+    await capture(page, growthUrl);
+    const standard = await city();
+    const standardHash = await geometryHash(page);
+    const beforeExport = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    await (await beforeExport).saveAs('test-results/frontage-before-export.png');
+    await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('frontage-growth');
+    const grown = await city();
+    assert.ok(grown.target >= 0, `Frontage growth must be accepted at the reported seed: ${JSON.stringify(grown)}`);
+    assert.equal(grown.failure, null);
+    assert.deepEqual(grown.buildings.flatMap((buildings, index) => JSON.stringify(buildings) !== JSON.stringify(standard.buildings[index]) ? [index] : []),
+      [grown.target], 'Exactly one neighborhood may change');
+    assert.deepEqual(grown.streets, standard.streets);
+    assert.deepEqual(grown.roads, standard.roads);
+    assert.deepEqual(grown.wall, standard.wall);
+    const audit = await page.evaluate(() => {
+      const data = window.__testModel.frontageGrowthData;
+      const points = polygon => polygon.map(point => [point.x, point.y]);
+      return { block: points(data.block), exclusions: data.exclusions.map(points), remaining: data.remaining,
+        plots: data.plots.map(plot => ({ polygon: points(plot.polygon), building: points(plot.building),
+          street: plot.street, frontage: points(plot.frontage) })),
+        streets: data.streets.map(street => ({ ...street, start: [street.start.x, street.start.y], end: [street.end.x, street.end.y] })),
+        lanes: data.lanes.map(points), events: data.events, unservedDistance: data.unservedDistance };
+    });
+    const areaOf = land => land.reduce((sum, part) => sum + part.reduce((value, ring, index) => value
+      + (index === 0 ? 1 : -1) * polygonArea(ring), 0), 0);
+    const pointSegment = (point, start, end) => {
+      const direction = [end[0] - start[0], end[1] - start[1]];
+      const squared = direction[0] ** 2 + direction[1] ** 2;
+      const fraction = Math.max(0, Math.min(1, ((point[0] - start[0]) * direction[0] + (point[1] - start[1]) * direction[1]) / squared));
+      return Math.hypot(point[0] - start[0] - fraction * direction[0], point[1] - start[1] - fraction * direction[1]);
+    };
+    const tolerance = polygonArea(audit.block) * 1e-6;
+    const reached = new Set(audit.streets.filter(street => street.existing).map(street => street.id));
+    for (const street of audit.streets.filter(street => !street.existing)) {
+      assert.ok(reached.has(street.parent), 'Every new lane must grow from an already reachable street');
+      const parent = audit.streets[street.parent];
+      assert.ok(pointSegment(street.start, parent.start, parent.end) < 1e-5, 'Parent connection must be geometric, not just an ID');
+      if (street.connectsTo >= 0) {
+        const target = audit.streets[street.connectsTo];
+        assert.ok(pointSegment(street.end, target.start, target.end) < 1e-5, 'Lane connections must reach their target street');
+      }
+      reached.add(street.id);
+    }
+    assert.ok(audit.events.some(event => event.kind === 'plot') && audit.events.some(event => event.kind === 'lane'));
+    assert.ok(audit.events.some((event, index) => event.kind === 'lane' && audit.events.slice(index + 1).some(next => next.kind === 'plot')),
+      'New access must create new frontage allocation opportunities');
+    assert.ok(audit.events.some(event => event.kind === 'lane' && event.count > 0), 'Growth must demonstrate plot retirement/reallocation');
+    for (let index = 0; index < audit.plots.length; index += 1) {
+      const plot = audit.plots[index];
+      assert.ok(reached.has(plot.street), 'Every plot must own frontage on a reachable street');
+      const street = audit.streets[plot.street];
+      const frontageLength = Math.hypot(plot.frontage[1][0] - plot.frontage[0][0], plot.frontage[1][1] - plot.frontage[0][1]);
+      assert.ok(frontageLength >= 0.65 - 1e-5, 'Frontage must have useful positive length');
+      for (const point of plot.frontage) {
+        const expected = street.existing ? 0.08 : street.width / 2 + 0.08;
+        assert.ok(Math.abs(pointSegment(point, street.start, street.end) - expected) < 1e-4,
+          'Plot frontage must be directly alongside its owned street');
+        assert.ok(plot.polygon.some((start, edge) => pointSegment(point, start, plot.polygon[(edge + 1) % plot.polygon.length]) < 1e-4));
+      }
+      assert.ok(areaOf(polygonClipping.difference([plot.building], [plot.polygon])) < tolerance);
+      assert.ok(areaOf(polygonClipping.difference([plot.polygon], [audit.block])) < tolerance);
+      for (const lane of audit.lanes) assert.ok(areaOf(polygonClipping.intersection([plot.polygon], [lane])) < tolerance);
+      assert.ok(areaOf(polygonClipping.intersection([plot.polygon], audit.remaining)) < tolerance);
+      for (let other = 0; other < index; other += 1) assert.ok(areaOf(polygonClipping.intersection([plot.polygon], [audit.plots[other].polygon])) < tolerance);
+    }
+    const previousArea = grown.attempt.previousArea;
+    assert.ok(grown.attempt.candidateArea >= previousArea * 0.8 && grown.attempt.candidateArea <= previousArea * 1.15,
+      'Preview must retain the explicitly approved density floor');
+    await writeFile('test-results/frontage-growth-audit.json', JSON.stringify(audit, null, 2));
+    const grownHash = await geometryHash(page);
+    const excludedFixture = await page.evaluate(() => {
+      const points = polygon => polygon.map(point => [point.x, point.y]);
+      const polygon = values => values.map(point => new window.__testPoint(...point));
+      const block = polygon([[0, 0], [36, 0], [36, 30], [0, 30]]);
+      const exclusion = polygon([[14, 12], [22, 12], [22, 19], [14, 19]]);
+      const source = polygon([[0, 0], [36, 0]]);
+      const data = new window.__testLandGeometry(block, [source], 18, 42, null, [exclusion]);
+      const initialHoleCount = data.remaining.reduce((sum, part) => sum + Math.max(0, part.length - 1), 0);
+      data.generate();
+      return { block: points(block), exclusion: points(exclusion), holeCount: initialHoleCount,
+        plots: data.plots.map(plot => ({polygon: points(plot.polygon), building: points(plot.building)})),
+        lanes: data.lanes.map(points), remaining: data.remaining, events: data.events };
+    });
+    assert.ok(excludedFixture.holeCount > 0, 'Buildable land must retain exclusion holes, not fill them');
+    assert.ok(excludedFixture.plots.length > 0 && excludedFixture.lanes.length > 0, 'Masked-land fixture must exercise plot allocation and access growth');
+    for (const plot of excludedFixture.plots) {
+      assert.ok(areaOf(polygonClipping.intersection([plot.polygon], [excludedFixture.exclusion])) < 1e-5,
+        'Claimed plots must avoid forbidden land');
+      assert.ok(areaOf(polygonClipping.intersection([plot.building], [excludedFixture.exclusion])) < 1e-5);
+    }
+    for (const lane of excludedFixture.lanes) assert.ok(areaOf(polygonClipping.intersection([lane], [excludedFixture.exclusion])) < 1e-5,
+      'New access lanes must avoid forbidden land');
+    assert.ok(areaOf(polygonClipping.intersection(excludedFixture.remaining, [excludedFixture.exclusion])) < 1e-5);
+    await writeFile('test-results/frontage-exclusion-audit.json', JSON.stringify(excludedFixture, null, 2));
+    await page.getByLabel('Rendering style', { exact: true }).selectOption('diagnostic');
+    assert.equal(await geometryHash(page), grownHash, 'Diagnostics must not change generation');
+    await page.screenshot({ path: 'test-results/frontage-diagnostic-desktop.png' });
+    const diagnosticExport = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    const diagnosticFile = await diagnosticExport;
+    assert.ok(diagnosticFile.suggestedFilename().includes('-diagnostic-'));
+    await diagnosticFile.saveAs('test-results/frontage-diagnostic.png');
+    await page.getByLabel('Rendering style', { exact: true }).selectOption('roofed');
+    assert.equal(await geometryHash(page), grownHash);
+    const roofExport = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+    await (await roofExport).saveAs('test-results/frontage-roofed.png');
+    const crop = await page.evaluate(() => window.cityGenerator.prototypeCrop);
+    await saveNeighborhood(await readFile('test-results/frontage-before-export.png'), 'test-results/frontage-before-neighborhood.png', crop.left, crop.top);
+    await saveNeighborhood(await readFile('test-results/frontage-roofed.png'), 'test-results/frontage-after-neighborhood.png', crop.left, crop.top);
+    await saveNeighborhood(await readFile('test-results/frontage-diagnostic.png'), 'test-results/frontage-diagnostic-neighborhood.png', crop.left, crop.top);
+    await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('standard');
+    assert.equal(await geometryHash(page), standardHash);
+    await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('frontage-growth');
+    await page.reload(); await page.waitForFunction(() => window.cityGenerator?.frontageGrowth);
+    assert.equal(await geometryHash(page), grownHash, 'Growth must reproduce after refresh');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.screenshot({ path: `test-results/frontage-mobile-${width}.png` });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
+    await page.getByRole('button', { name: 'Copy city link' }).click();
+    await page.waitForFunction(() => document.querySelector('#build-status').textContent === 'City link copied.');
+    const shared = await page.evaluate(() => navigator.clipboard.readText());
+    assert.equal(new URL(shared).searchParams.get('layout'), 'frontage-growth');
+    await page.goto(shared); await page.waitForFunction(() => window.cityGenerator?.frontageGrowth);
+    assert.equal(await geometryHash(page), grownHash);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.getByRole('button', { name: 'Compare builds' }).click();
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]')?.disabled);
+    assert.equal(await page.getByLabel('Before layout', { exact: true }).inputValue(), 'standard');
+    assert.equal(await page.getByLabel('After layout', { exact: true }).inputValue(), 'frontage-growth');
+    assert.equal(await page.getByLabel('Comparison view', { exact: true }).inputValue(), 'prototype');
+    assert.notEqual(pixelHash(await page.locator('[data-side="before"] canvas').screenshot()),
+      pixelHash(await page.locator('[data-side="after"] canvas').screenshot()));
+    await page.screenshot({ path: 'test-results/frontage-comparison-desktop.png' });
+    await page.getByLabel('Before build', { exact: true }).selectOption(currentBuild.id);
+    await page.getByLabel('Before layout', { exact: true }).selectOption('frontage-growth');
+    await page.getByLabel('Comparison style', { exact: true }).selectOption('diagnostic');
+    await page.getByRole('button', { name: 'Apply comparison settings' }).click();
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Download after PNG"]').disabled);
+    assert.ok(await page.evaluate(() => document.querySelector('[data-side="before"] canvas').toDataURL()
+      === document.querySelector('[data-side="after"] canvas').toDataURL()), 'Equal growth builds must produce equal diagnostic crops');
+    const comparisonExport = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download after PNG' }).click();
+    assert.ok((await comparisonExport).suggestedFilename().includes('-frontage-growth-'));
+    await page.screenshot({ path: 'test-results/frontage-diagnostic-comparison.png' });
+    console.log(`PASS: frontage-driven district ${grown.target}; plots ${audit.plots.length}; streets ${audit.streets.length}; density ${(grown.attempt.candidateArea / previousArea).toFixed(3)}; explicit frontage, connected access, reallocation and diagnostics`);
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');

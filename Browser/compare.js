@@ -54,8 +54,11 @@ function loadEngine(build, query) {
           if (api) {
             if (!build.legacy && api.buildId !== build.id) throw new Error(`Engine identity mismatch for ${build.id}.`);
             if (Boolean(api.roofed) !== (query.style === 'roofed')) throw new Error(`Build ${build.id} does not support the requested rendering style.`);
+            if (Boolean(api.diagnostic) !== (query.style === 'diagnostic')) throw new Error(`Build ${build.id} does not support the requested diagnostic style and layout.`);
             if (Boolean(api.prototype) !== (query.layout === 'prototype')) throw new Error(`Build ${build.id} does not support the requested neighborhood layout.`);
+            if (Boolean(api.frontageGrowth) !== (query.layout === 'frontage-growth')) throw new Error(`Build ${build.id} does not support frontage-driven growth.`);
             if (query.layout === 'prototype' && api.prototypePatch < 0) throw new Error(`Build ${build.id} retained Standard layout because no district met prototype safeguards.`);
+            if (query.layout === 'frontage-growth' && api.prototypePatch < 0) throw new Error(`Build ${build.id} retained Standard layout because no district met frontage-growth safeguards.`);
             if (api.seed !== query.seed || api.size !== query.size || api.walls !== query.walls
               || Boolean(api.blockFrontage) !== (query.buildings === 'frontage')
               || Boolean(api.footprints) !== (query.buildings === 'footprints')) {

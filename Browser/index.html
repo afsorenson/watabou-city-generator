@@ -21,8 +21,8 @@
       <label for="city-size">City size <input id="city-size" type="number" min="6" max="40" step="1" value="40" disabled></label>
       <label class="wall-setting"><input id="walls" type="checkbox" disabled> Walls</label>
       <label class="building-setting" for="buildings">Buildings <select id="buildings" aria-label="Buildings" disabled><option value="original">Original</option><option value="footprints">Footprints</option><option value="frontage">Block Rows</option></select></label>
-      <label for="render-style">Style <select id="render-style" aria-label="Rendering style" disabled><option value="flat">Flat</option><option value="roofed">Roofed</option></select></label>
-      <label for="neighborhood-layout">Layout <select id="neighborhood-layout" aria-label="Neighborhood layout" disabled><option value="standard">Standard</option><option value="prototype">One District</option></select></label>
+      <label for="render-style">Style <select id="render-style" aria-label="Rendering style" disabled><option value="flat">Flat</option><option value="roofed">Roofed</option><option value="diagnostic">Diagnostic</option></select></label>
+      <label for="neighborhood-layout">Layout <select id="neighborhood-layout" aria-label="Neighborhood layout" disabled><option value="standard">Standard</option><option value="prototype">One District</option><option value="frontage-growth">Frontage Growth</option></select></label>
     </div>
     <div class="actions">
       <button id="regenerate" type="button" title="Generate a new city" aria-label="Generate a new city" disabled><img src="./icons/refresh-cw.svg" alt=""><span>New City</span></button>
@@ -32,9 +32,11 @@
     </div>
   </header>
   <output id="build-status" role="status" hidden></output>
+  <div id="frontage-legend" class="diagnostic-legend" hidden><span><i style="background:#365d88"></i>Streets</span><span><i style="background:#d4e4ee"></i>Plots</span><span><i style="background:#b36a24"></i>Frontage</span><span><i style="background:#dbe8c3"></i>Remaining</span><span><i style="background:#e8b7b7"></i>Excluded</span></div>
   <dialog id="link-dialog"><form method="dialog"><label for="city-link">City link</label><input id="city-link" type="text" readonly><button>Close</button></form></dialog>
   <main id="openfl-content" aria-label="Generated city map"></main>
   <script src="./vendor/polygon-clipping.umd.min.js"></script>
+  <script src="./vendor/frontage-geometry.js"></script>
   <script src="./build-info.js?build=__CITY_BUILD_ID__"></script>
   <script src="./TownGenerator.js?build=__CITY_BUILD_ID__"></script>
   <script src="./controls.js?build=__CITY_BUILD_ID__"></script>

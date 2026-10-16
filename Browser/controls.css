@@ -20,6 +20,11 @@ h1 { margin: 0; font: 600 20px "Palatino Linotype", "Book Antiqua", serif; }
 .build output { font-family: Menlo, monospace; }
 .seed-setting { display: flex; gap: 6px; margin: 0; }
 #seed { width: 132px; font-variant-numeric: tabular-nums; }
+#neighborhood-layout { width: 150px; }
+.diagnostic-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 6px 20px; font-size: 11px; border-bottom: 1px solid var(--line); }
+.diagnostic-legend[hidden] { display: none; }
+.diagnostic-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.diagnostic-legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid #85908b; }
 .settings, .actions { flex-wrap: wrap; }
 #build-status { padding: 6px 20px; font-size: 12px; background: #fff4d6; flex: none; }
 #build-status[hidden] { display: none; }

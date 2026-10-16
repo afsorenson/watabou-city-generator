@@ -21,6 +21,8 @@ class StateManager {
 	public static var blockFrontage : Bool = false;
 	public static var roofed : Bool = false;
 	public static var neighborhoodPrototype : Bool = false;
+	public static var frontageGrowth : Bool = false;
+	public static var diagnostic : Bool = false;
 
 	public static function pullParams() {
 		#if html5
@@ -40,6 +42,8 @@ class StateManager {
 			blockFrontage = params.get( BUILDINGS ) == "frontage";
 			roofed = params.get( "style" ) == "roofed";
 			neighborhoodPrototype = blockFrontage && params.get( "layout" ) == "prototype";
+			frontageGrowth = blockFrontage && params.get( "layout" ) == "frontage-growth";
+			diagnostic = frontageGrowth && params.get( "style" ) == "diagnostic";
 		}
 		#end
 	}
@@ -59,9 +63,11 @@ class StateManager {
 		if (blockFrontage) params.set( BUILDINGS, "frontage" );
 		else if (footprints) params.set( BUILDINGS, "footprints" );
 		else params.delete_( BUILDINGS );
-		if (roofed) params.set( "style", "roofed" );
+		if (diagnostic) params.set( "style", "diagnostic" );
+		else if (roofed) params.set( "style", "roofed" );
 		else params.delete_( "style" );
-		if (blockFrontage && neighborhoodPrototype) params.set( "layout", "prototype" );
+		if (blockFrontage && frontageGrowth) params.set( "layout", "frontage-growth" );
+		else if (blockFrontage && neighborhoodPrototype) params.set( "layout", "prototype" );
 		else params.delete_( "layout" );
 		var query:String = untyped params.toString();
 		var url = Browser.location.pathname + "?" + query + Browser.location.hash;

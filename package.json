@@ -12,14 +12,17 @@
     "test:identity": "node scripts/smoke-test.mjs --identity-only",
     "test:roofs": "node scripts/smoke-test.mjs --roofs-only",
     "test:quality": "node scripts/smoke-test.mjs --quality-only",
-    "test:prototype": "node scripts/smoke-test.mjs --prototype-only"
+    "test:prototype": "node scripts/smoke-test.mjs --prototype-only",
+    "test:frontage": "node scripts/smoke-test.mjs --frontage-only"
   },
   "devDependencies": {
+    "esbuild": "0.25.12",
     "lucide-static": "0.468.0",
     "playwright": "1.56.1",
     "pngjs": "7.0.0"
   },
   "dependencies": {
-    "polygon-clipping": "0.15.7"
+    "polygon-clipping": "0.15.7",
+    "polylabel": "2.0.1"
   }
 }

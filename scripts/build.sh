@@ -17,5 +17,8 @@ cp node_modules/lucide-static/LICENSE Export/html5/bin/icons/LICENSE
 mkdir -p Export/html5/bin/vendor
 cp node_modules/polygon-clipping/dist/polygon-clipping.umd.min.js Export/html5/bin/vendor/
 cp node_modules/polygon-clipping/LICENSE.md Export/html5/bin/vendor/polygon-clipping-LICENSE.md
+./node_modules/.bin/esbuild Browser/frontage-geometry.js --bundle --format=iife --outfile=Export/html5/bin/vendor/frontage-geometry.js
+cp node_modules/polylabel/LICENSE Export/html5/bin/vendor/polylabel-LICENSE
+cp node_modules/tinyqueue/LICENSE Export/html5/bin/vendor/tinyqueue-LICENSE
 node scripts/build-info.mjs finish
 printf 'Built Export/html5/bin/index.html\n'
