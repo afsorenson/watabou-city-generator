@@ -88,6 +88,14 @@ Northwest, Center, or South neighborhood crops. Each panel identifies its actual
 build and can download its full map or selected crop. **Copy Link** preserves both
 build IDs, all settings, and the selected view.
 
+**Before layout** and **After layout** can independently select Standard or One
+District, while seed, size, walls, building mode, and style remain locked together.
+Opening Compare from an accepted prototype defaults to Standard before, One
+District after, and the **Changed District** view. That crop is computed from the
+selected district's actual export coordinates and applied identically to both PNGs.
+The return-to-city link preserves the After layout. Unsupported archived layouts
+and rejected prototype attempts are reported rather than silently substituted.
+
 Builds are retained under `.toolchain/build-history/` and published into the local
 server's generated `builds/` directory at build time. They are not silently pruned.
 Back up that history if exact restoration matters; it is ignored by Git and is not
@@ -132,6 +140,38 @@ filenames include `roofed` before the compiled build ID. Comparison uses one sha
 style for both engines; if a selected archived engine lacks it, the page reports
 the incompatibility rather than substituting Flat. Builds record supported styles,
 and automatic comparison selection prefers compatible archives.
+
+### Single-District Neighborhood Prototype
+
+In **Block Rows**, **Layout > One District** enables a deliberately isolated
+experiment. Standard remains the default. The prototype chooses the largest
+suitable convex regenerated district, connects three perimeter entrances through
+an interior junction, and fills the resulting regions with shorter rows aligned
+to different local branches. Narrow local alleys remain connected to the boundary
+route network. It does not change main roads, walls, district shapes, landmarks,
+or buildings and lanes in other districts.
+
+```text
+http://127.0.0.1:8788/?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed&layout=prototype
+```
+
+The candidate must have enough usable buildings and retain 85-115% of that
+district's standard building area; numerical failures or unsuitable districts keep
+Standard geometry and display a warning. Layout is retained in copied links,
+seed restoration, build comparisons, and PNG filenames. Switching back to Standard
+restores the exact baseline.
+
+At size 40, seed 1091337103, walls on, district index 38 is the only changed
+district. Its tested building area changes from approximately 1151.0 to 1172.6
+(about +1.9%), all 14 active lane sections connect to block-boundary routes, and
+the largest 15-degree frontage-orientation bin falls from 72.9% to 33.5% of building
+area. These are fixed-fixture measurements, not universal promises.
+
+This is a prototype for visual review, not a city-wide rollout. Its local regions
+still use structured lots and currently retain detached clusters rather than
+applying the attached-frontage grouping pass. It does not simulate historical
+growth or terrain constraints. Review the enlarged Changed District comparison
+before deciding whether to generalize it.
 
 ### Building Modes
 
@@ -247,6 +287,11 @@ compiled build ID. Comparison exports also identify before/after and the crop.
 
 Prioritized follow-ups after neighborhood street topology:
 
+- [x] **Prototype one branching neighborhood.** Optional One District layout at
+	seed 1091337103, with matching crops, exact surrounding-city preservation,
+	connected access, and a density/orientation audit. Await visual review before
+	considering a city-wide rollout or richer local grouping.
+
 - [x] **Soften district transitions (first pass).** Use shared street context to blend building
 	scale, orientation, and density near boundaries without erasing district identity.
 - [x] **Vary building grouping (first pass).** Mix short attached frontages and
@@ -294,6 +339,20 @@ For just footprint-quality fixtures, actual-seed audits, and exports:
 ```sh
 npm run test:quality
 ```
+
+For the isolated neighborhood prototype and its comparison workflow:
+
+```sh
+npm run test:prototype
+```
+
+Prototype checks require exactly one changed district, exact preservation of
+surrounding buildings and lanes, clear connected roads, no building overlaps,
+comparable area coverage, a reduced dominant orientation, deterministic refresh
+and Standard restoration, version-bound sharing, Changed District downloads,
+mobile layout, and safe recovery from an injected clipping failure. Reports and
+matching crops are `test-results/prototype-audit.json`,
+`prototype-before-neighborhood.png`, and `prototype-after-neighborhood.png`.
 
 Quality checks cover normal/skewed/L-shaped buildings, triangles, needles, acute
 corners, slivers, and rotated fixtures. Actual cities must preserve exact unflagged

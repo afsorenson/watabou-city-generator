@@ -8,6 +8,7 @@ const applySeedButton = document.querySelector('#apply-seed');
 const copyButton = document.querySelector('#copy-link');
 const compareButton = document.querySelector('#compare');
 const styleInput = document.querySelector('#render-style');
+const layoutInput = document.querySelector('#neighborhood-layout');
 const status = document.querySelector('#build-status');
 const appRoot = new URL(window.cityBuild?.appRoot ?? './', location.href);
 if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embedded');
@@ -22,7 +23,7 @@ function cityUrl() {
   const url = new URL(`builds/${city.buildId}/`, appRoot);
   url.search = new URLSearchParams({ size: city.size, seed: city.seed, walls: city.walls ? '1' : '0',
     buildings: city.blockFrontage ? 'frontage' : (city.footprints ? 'footprints' : 'original'),
-    style: city.roofed ? 'roofed' : 'flat' });
+    style: city.roofed ? 'roofed' : 'flat', layout: city.prototype ? 'prototype' : 'standard' });
   return url;
 }
 
@@ -32,9 +33,13 @@ document.addEventListener('city-ready', () => {
   buildingsInput.value = window.cityGenerator.blockFrontage ? 'frontage' : (window.cityGenerator.footprints ? 'footprints' : 'original');
   seedInput.value = window.cityGenerator.seed;
   styleInput.value = window.cityGenerator.roofed ? 'roofed' : 'flat';
+  layoutInput.value = window.cityGenerator.prototype ? 'prototype' : 'standard';
   document.querySelector('#build-id').textContent = window.cityGenerator.buildId;
   for (const control of [sizeInput, wallsInput, buildingsInput, styleInput, seedInput, applySeedButton, copyButton, compareButton, regenerateButton, exportButton]) control.disabled = false;
+  layoutInput.disabled = !window.cityGenerator.blockFrontage;
   if (window.cityBuild?.id !== window.cityGenerator.buildId) showStatus('Build mismatch: reload this page.');
+  else if (window.cityGenerator.prototype && window.cityGenerator.prototypePatch < 0) showStatus('No suitable district met the prototype safeguards; Standard layout retained.');
+  else if (status.textContent.startsWith('No suitable district')) showStatus('');
 });
 
 document.querySelector('#seed-form').addEventListener('submit', event => {
@@ -59,21 +64,25 @@ compareButton.addEventListener('click', () => {
   const url = new URL('compare.html', appRoot);
   url.search = cityUrl().search;
   url.searchParams.set('after', window.cityGenerator.buildId);
+  url.searchParams.set('beforeLayout', 'standard');
+  url.searchParams.set('afterLayout', window.cityGenerator.prototype ? 'prototype' : 'standard');
+  if (window.cityGenerator.prototype) url.searchParams.set('view', 'prototype');
   location.href = url.href;
 });
 
 function generate(newSeed) {
   if (!sizeInput.reportValidity()) return;
   const walls = new URLSearchParams(location.search).has('walls') ? wallsInput.checked : null;
-  window.cityGenerator.generate(Number(sizeInput.value), walls, newSeed, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage');
+  window.cityGenerator.generate(Number(sizeInput.value), walls, newSeed, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage', layoutInput.value === 'prototype');
 }
 
 sizeInput.addEventListener('change', () => generate(false));
 wallsInput.addEventListener('change', () => {
   if (!sizeInput.reportValidity()) return;
-  window.cityGenerator.generate(Number(sizeInput.value), wallsInput.checked, false, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage');
+  window.cityGenerator.generate(Number(sizeInput.value), wallsInput.checked, false, buildingsInput.value === 'footprints', buildingsInput.value === 'frontage', layoutInput.value === 'prototype');
 });
 buildingsInput.addEventListener('change', () => generate(false));
 styleInput.addEventListener('change', () => window.cityGenerator.setStyle(styleInput.value === 'roofed'));
+layoutInput.addEventListener('change', () => generate(false));
 regenerateButton.addEventListener('click', () => generate(true));
 exportButton.addEventListener('click', () => window.cityGenerator.exportPng());

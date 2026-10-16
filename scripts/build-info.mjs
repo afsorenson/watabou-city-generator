@@ -58,7 +58,9 @@ window.saveAs = function(blob, name, options) {
   const id = `${commit}${dirty ? '-dirty' : ''}-${sourceHash.slice(0, 10)}`;
   const styles = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="render-style"')
     ? ['flat', 'roofed'] : ['flat'];
-  await writeJson(statePath, { id, commit, sourceHash, dirty, styles, legacy: false, builtAt: new Date().toISOString() });
+  const layouts = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="neighborhood-layout"')
+    ? ['standard', 'prototype'] : ['standard'];
+  await writeJson(statePath, { id, commit, sourceHash, dirty, styles, layouts, legacy: false, builtAt: new Date().toISOString() });
   console.log(id);
 } else if (process.argv[2] === 'finish') {
   const info = JSON.parse(await readFile(statePath, 'utf8'));

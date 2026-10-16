@@ -36,6 +36,10 @@ class Model {
 	public var footprintQualityOriginals : Array<Array<Polygon>> = [];
 	public var footprintQualitySources : Array<Array<Int>> = [];
 	public var footprintQualityChanges : Array<{patchIndex:Int, sourceIndex:Int, reason:String, before:Polygon, after:Array<Polygon>}> = [];
+	public var prototypePatchIndex : Int = -1;
+	public var prototypeRegions : Array<Polygon> = [];
+	public var prototypeAttempt : {patchIndex:Int, previousArea:Float, candidateArea:Float};
+	public var prototypeFailure : String;
 
 	// Small Town	6
 	// Large Town	10
@@ -82,7 +86,7 @@ class Model {
 	public var streets	: Array<Street>;
 	public var roads	: Array<Street>;
 
-	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false, blockFrontageMode=false ) {
+	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false, blockFrontageMode=false, prototype=false ) {
 
 		if (seed > 0) Random.reset( seed );
 		this.nPatches = nPatches != -1 ? nPatches : 15;
@@ -102,6 +106,10 @@ class Model {
 		} while (instance == null);
 		if (blockFrontageMode) BlockFrontage.apply( this, seed );
 		else if (footprints) BuildingFootprints.apply( this, seed );
+		if (blockFrontageMode && prototype) {
+			try NeighborhoodPrototype.apply( this, seed )
+			catch (error:Dynamic) prototypeFailure = Std.string( error );
+		}
 		if (blockFrontageMode || footprints) FootprintQuality.apply( this );
 	}
 

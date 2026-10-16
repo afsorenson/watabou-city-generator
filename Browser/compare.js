@@ -5,6 +5,8 @@ const status = document.querySelector('#comparison-status');
 const regionInput = document.querySelector('#comparison-region');
 const beforeInput = document.querySelector('#before-build');
 const afterInput = document.querySelector('#after-build');
+const beforeLayoutInput = document.querySelector('#before-layout');
+const afterLayoutInput = document.querySelector('#after-layout');
 const seedInput = document.querySelector('#comparison-seed');
 const sizeInput = document.querySelector('#comparison-size');
 const wallsInput = document.querySelector('#comparison-walls');
@@ -52,6 +54,8 @@ function loadEngine(build, query) {
           if (api) {
             if (!build.legacy && api.buildId !== build.id) throw new Error(`Engine identity mismatch for ${build.id}.`);
             if (Boolean(api.roofed) !== (query.style === 'roofed')) throw new Error(`Build ${build.id} does not support the requested rendering style.`);
+            if (Boolean(api.prototype) !== (query.layout === 'prototype')) throw new Error(`Build ${build.id} does not support the requested neighborhood layout.`);
+            if (query.layout === 'prototype' && api.prototypePatch < 0) throw new Error(`Build ${build.id} retained Standard layout because no district met prototype safeguards.`);
             if (api.seed !== query.seed || api.size !== query.size || api.walls !== query.walls
               || Boolean(api.blockFrontage) !== (query.buildings === 'frontage')
               || Boolean(api.footprints) !== (query.buildings === 'footprints')) {
@@ -72,7 +76,7 @@ function loadEngine(build, query) {
     };
     const url = new URL(build.url, root);
     url.search = new URLSearchParams({ seed: query.seed, size: query.size, walls: query.walls ? '1' : '0',
-      buildings: query.buildings, style: query.style, embed: '1' });
+      buildings: query.buildings, style: query.style, layout: query.layout, embed: '1' });
     frame.src = url.href;
     document.body.append(frame);
   });
@@ -98,7 +102,8 @@ function capturePng(frame) {
 function comparisonUrl() {
   const url = new URL('compare.html', root);
   url.search = new URLSearchParams({ before: settings.before, after: settings.after, seed: settings.seed,
-    size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style, view: regionInput.value });
+    size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style,
+    beforeLayout: settings.beforeLayout, afterLayout: settings.afterLayout, view: regionInput.value });
   return url;
 }
 
@@ -113,7 +118,8 @@ async function render() {
     context.fillRect(0, 0, 600, 600);
   }
   settings = { before: beforeInput.value, after: afterInput.value, seed: Number(seedInput.value),
-    size: Number(sizeInput.value), walls: wallsInput.checked, buildings: buildingsInput.value, style: styleInput.value };
+    size: Number(sizeInput.value), walls: wallsInput.checked, buildings: buildingsInput.value, style: styleInput.value,
+    beforeLayout: beforeLayoutInput.value, afterLayout: afterLayoutInput.value };
   history.replaceState(null, '', comparisonUrl());
   status.textContent = 'Rendering comparison...';
   for (const control of form.elements) control.disabled = true;
@@ -123,7 +129,7 @@ async function render() {
       const build = catalog.builds.find(candidate => candidate.id === settings[side]);
       if (!build) throw new Error(`Archived build ${settings[side]} is not available.`);
       document.querySelector(`[data-side="${side}"] .comparison-build`).textContent = build.id;
-      const frame = await loadEngine(build, settings);
+      const frame = await loadEngine(build, { ...settings, layout: settings[`${side}Layout`] });
       await new Promise(resolveFrame => frame.contentWindow.requestAnimationFrame(() =>
         frame.contentWindow.requestAnimationFrame(resolveFrame)));
       const png = await capturePng(frame);
@@ -131,13 +137,18 @@ async function render() {
       image.src = png;
       await image.decode();
       if (image.width !== 2048 || image.height !== 2048) throw new Error('Unexpected comparison export dimensions.');
-      snapshots.set(side, { build, png, image });
+      snapshots.set(side, { build, png, image, prototypeCrop: frame.contentWindow.cityGenerator.prototypeCrop });
     }));
+    const crop = snapshots.get('after').prototypeCrop ?? snapshots.get('before').prototypeCrop;
+    if (crop) regions.prototype = [crop.left, crop.top];
+    else delete regions.prototype;
+    regionInput.querySelector('option[value="prototype"]').disabled = !crop;
+    if (regionInput.value === 'prototype' && !crop) regionInput.value = 'whole';
     draw();
     status.textContent = `Seed ${settings.seed} · Size ${settings.size} · ${settings.walls ? 'Walled' : 'Open'} · ${settings.buildings}`;
     for (const button of document.querySelectorAll('.download-comparison')) button.disabled = false;
     const back = new URL(`builds/${settings.after}/`, root);
-    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style });
+    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style, layout: settings.afterLayout });
     document.querySelector('#back-link').href = back.href;
   } catch (error) {
     status.textContent = error.message;
@@ -157,7 +168,7 @@ for (const button of document.querySelectorAll('.download-comparison')) {
     if (!snapshot) return;
     const anchor = document.createElement('a');
     anchor.href = regions[regionInput.value] ? button.closest('figure').querySelector('canvas').toDataURL('image/png') : snapshot.png;
-    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${settings.style}-${regionInput.value}.png`;
+    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${settings.style}-${settings[`${side}Layout`]}-${regionInput.value}.png`;
     anchor.click();
   });
 }
@@ -181,7 +192,9 @@ try {
   }
   const after = params.get('after') ?? catalog.current;
   const requestedStyle = params.get('style') ?? 'flat';
-  const compatible = build => requestedStyle === 'flat' || build.styles?.includes(requestedStyle);
+  const requestedBeforeLayout = params.get('beforeLayout') ?? 'standard';
+  const compatible = build => (requestedStyle === 'flat' || build.styles?.includes(requestedStyle))
+    && (requestedBeforeLayout === 'standard' || build.layouts?.includes(requestedBeforeLayout));
   const before = params.get('before') ?? catalog.builds.find(build => build.id !== after && !build.dirty && compatible(build))?.id
     ?? catalog.builds.find(build => build.id !== after && compatible(build))?.id ?? after;
   if (![before, after].every(id => catalog.builds.some(build => build.id === id))) throw new Error('A requested archived build is unavailable.');
@@ -192,6 +205,8 @@ try {
   wallsInput.checked = params.get('walls') !== '0';
   buildingsInput.value = params.get('buildings') ?? 'frontage';
   styleInput.value = params.get('style') ?? 'flat';
+  beforeLayoutInput.value = params.get('beforeLayout') ?? 'standard';
+  afterLayoutInput.value = params.get('afterLayout') ?? params.get('layout') ?? 'standard';
   regionInput.value = params.get('view') ?? 'whole';
   document.querySelector('#back-link').href = root.href;
   await render();

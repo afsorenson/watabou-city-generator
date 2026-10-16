@@ -38,7 +38,7 @@ class TownScene extends Scene {
 		addChild( buttons );
 
 		#if html5
-		BrowserControls.bind( exportPng );
+		BrowserControls.bind( exportPng, map.getCityBounds() );
 		#else
 		var smallTown = new CitySizeButton( "Small Town", 6, 10 );
 		var largeTown = new CitySizeButton( "Large Town", 10, 15 );
@@ -86,6 +86,7 @@ class TownScene extends Scene {
 		var bytes:haxe.io.Bytes = png;
 		var suffix = StateManager.blockFrontage ? "-frontage" : (StateManager.footprints ? "-footprints" : "");
 		if (StateManager.roofed) suffix += "-roofed";
+		if (StateManager.neighborhoodPrototype) suffix += "-prototype";
 		new FileReference().save( ByteArray.fromBytes( bytes.sub( 0, png.length ) ),
 			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}$suffix-${BuildInfo.identifier()}.png' );
 	}
