@@ -264,6 +264,14 @@ should remain available as unchanged comparison modes.
 
 ### Verification And Provenance
 
+Known pre-existing generator limitation: size 40, seed `1155767784`, walls off,
+Footprints mode can fail in `Graph.aStar`/`Topology.buildPath` before building
+geometry or quality cleanup runs (`undefined.__id__`). The same failure is
+reproducible in the archived pre-cleanup build `a5d4581-3e660ff168`. This narrow
+cleanup intentionally does not alter upstream street routing. Random New City
+smoke checks may encounter this older failure; fixed-seed cleanup checks remain
+separate and do not suppress it.
+
 ```sh
 npm run build
 npm test
