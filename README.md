@@ -107,8 +107,14 @@ current engine.
 **Style** is independent of **Buildings**. **Flat** preserves the established
 monochrome drawing. **Roofed** adds muted gray pitched-roof planes, subtle eaves,
 consistent southeast shadows from a northwest light, ridge lines, and occasional
-small chimneys. L-shaped and stepped footprints receive multiple roof sections;
-other polygons receive clipped roof planes. Parks and market features stay flat.
+small chimneys. L-shaped and stepped footprints receive multiple roof sections.
+Suitable irregular convex footprints use equal-pitch hipped faces formed from
+inward distances to their perimeter edges, with orientation-aware lighting.
+Hip/ridge lines follow intersections of those planes rather than a bounding-box
+midpoint split. Difficult irregular concave footprints, or numerically unsafe hip
+plans, use restrained single-tone shading without invented ridges. Clipping uses
+normalized coordinates and validates footprint coverage; an unsuitable roof cannot
+abort the city render. Parks and market features stay flat.
 This is a 2D roof treatment, not a full 3D or architectural roof simulation.
 
 ```text
@@ -264,6 +270,14 @@ Flat restoration, visible shaded planes, identical desktop/mobile PNG pixels,
 all building modes, shared style restoration, equal-build Roofed comparisons,
 and explicit failure for incompatible archived styles. Matching crops are
 `test-results/roof-flat-neighborhood.png` and `test-results/roofed-neighborhood.png`.
+Irregular-roof fixtures also cover skewed quadrilaterals, triangles, convex
+pentagons, reversed order, collinear vertices, and a difficult concave fallback.
+They verify equal-height hip/ridge lines, complete nonoverlapping roof coverage,
+and unchanged footprint/model geometry. Where the original Roofed build (`9fcb9d3`)
+is archived locally, matching crops focus on the reported upper-left neighborhood:
+`irregular-roofs-before-neighborhood.png` and `irregular-roofs-after-neighborhood.png`.
+Actual-seed plan diagnostics are saved as `irregular-roofs-original.json` and
+`irregular-roofs-footprints.json` under `test-results/`.
 
 These checks validate seed restoration after refresh/New City, invalid inputs,
 compiled engine fingerprints, build-bound links and clipboard fallback, locked

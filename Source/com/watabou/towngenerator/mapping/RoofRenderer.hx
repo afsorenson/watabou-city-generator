@@ -8,8 +8,8 @@ import com.watabou.geom.Polygon;
 
 using com.watabou.utils.GraphicsExtender;
 
-typedef RoofFace = { var polygon:Polygon; var light:Bool; }
-typedef RoofPlan = { var faces:Array<RoofFace>; var ridges:Array<Polygon>; var sections:Array<Polygon>; }
+typedef RoofFace = { var polygon:Polygon; var light:Bool; @:optional var color:Int; }
+typedef RoofPlan = { var faces:Array<RoofFace>; var ridges:Array<Polygon>; var sections:Array<Polygon>; var kind:String; }
 
 class RoofRenderer {
 	private var shadows:Graphics;
@@ -35,7 +35,7 @@ class RoofRenderer {
 		graphics.endFill();
 		graphics.lineStyle();
 		for (face in roof.faces) {
-			graphics.beginFill( face.light ? 0xc2c2c2 : 0x969696 );
+			graphics.beginFill( face.color != null ? face.color : (face.light ? 0xc2c2c2 : 0x969696) );
 			graphics.drawPolygon( face.polygon );
 			graphics.endFill();
 		}
@@ -89,6 +89,18 @@ class RoofRenderer {
 		local.forEdge( function( start, end ) {
 			if (Math.abs( start.x - end.x ) > 0.00001 && Math.abs( start.y - end.y ) > 0.00001) orthogonal = false;
 		} );
+		if (!orthogonal) {
+			var cleaned = clean( footprint );
+			if (cleaned.length >= 3 && cleaned.isConvex()) {
+				try {
+					var roof = hipped( cleaned );
+					var area = 0.0;
+					for (face in roof.faces) area += Math.abs( face.polygon.square );
+					if (roof.faces.length >= 3 && Math.abs( area - cleaned.square ) < cleaned.square * 0.00001) return roof;
+				} catch (error:Dynamic) {}
+			}
+			return {faces: [{polygon: footprint, light: true, color: 0xaaaaaa}], ridges: [], sections: [], kind: "restrained"};
+		}
 		var pieces:Array<Polygon> = [];
 		if (orthogonal) {
 			var cuts = [for (point in local) point.x];
@@ -113,8 +125,8 @@ class RoofRenderer {
 				}
 			}
 			for (rectangle in rectangles) pieces.push( rectanglePolygon( rectangle.left, rectangle.right, rectangle.front, rectangle.back ) );
-		} else pieces = [local];
-		var result:RoofPlan = {faces: [], ridges: [], sections: []};
+		}
+		var result:RoofPlan = {faces: [], ridges: [], sections: [], kind: "sectioned"};
 		for (piece in pieces) {
 			var minX = Math.POSITIVE_INFINITY;
 			var minY = Math.POSITIVE_INFINITY;
@@ -144,6 +156,100 @@ class RoofRenderer {
 			result.sections.push( world( piece, origin, axis ) );
 		}
 		return result;
+	}
+
+	private static function clean( footprint:Polygon ):Polygon {
+		var vertices = footprint.copy();
+		var changed = true;
+		while (changed && vertices.length > 3) {
+			changed = false;
+			for (index in 0...vertices.length) {
+				var previous = vertices[(index + vertices.length - 1) % vertices.length];
+				var point = vertices[index];
+				var next = vertices[(index + 1) % vertices.length];
+				var incoming = point.subtract( previous );
+				var outgoing = next.subtract( point );
+				if (incoming.length < 0.000001 || outgoing.length < 0.000001
+					|| Math.abs( incoming.x * outgoing.y - incoming.y * outgoing.x ) < incoming.length * outgoing.length * 0.00000001) {
+					vertices.splice( index, 1 );
+					changed = true;
+					break;
+				}
+			}
+		}
+		var result = new Polygon( vertices );
+		if (result.square < 0) result.reverse();
+		return result;
+	}
+
+	private static function hipped( footprint:Polygon ):RoofPlan {
+		var planes = [for (index in 0...footprint.length) {
+			var start = footprint[index];
+			var edge = footprint[(index + 1) % footprint.length].subtract( start );
+			var normal = new Point( -edge.y / edge.length, edge.x / edge.length );
+			{normal: normal, bias: -normal.x * start.x - normal.y * start.y};
+		}];
+		var result:RoofPlan = {faces: [], ridges: [], sections: [footprint], kind: "hipped"};
+		var ridgeKeys = new Map<String,Bool>();
+		for (index in 0...planes.length) {
+			var owner = planes[index];
+			var faces = [footprint];
+			for (otherIndex in 0...planes.length) {
+				if (index == otherIndex) continue;
+				var other = planes[otherIndex];
+				var clipped:Array<Polygon> = [];
+				for (face in faces) clipped = clipped.concat( halfPlane( face,
+					other.normal.x - owner.normal.x, other.normal.y - owner.normal.y, other.bias - owner.bias ) );
+				faces = clipped;
+				if (faces.length == 0) break;
+			}
+			var illumination = owner.normal.x * 0.6 + owner.normal.y * 0.8;
+			var tone = Math.round( 171 + illumination * 33 );
+			for (face in faces) {
+				if (Math.abs( face.square ) < 0.000001) continue;
+				result.faces.push( {polygon: face, light: illumination >= 0, color: (tone << 16) | (tone << 8) | tone} );
+				face.forEdge( function( start, end ) {
+					if (Point.distance( start, end ) < 0.00001) return;
+					var boundary = false;
+					for (plane in planes) {
+						var first = plane.normal.x * start.x + plane.normal.y * start.y + plane.bias;
+						var second = plane.normal.x * end.x + plane.normal.y * end.y + plane.bias;
+						if (Math.abs( first ) < 0.000001 && Math.abs( second ) < 0.000001) boundary = true;
+					}
+					if (boundary) return;
+					var firstKey = Math.round( start.x * 1000000 ) + ":" + Math.round( start.y * 1000000 );
+					var secondKey = Math.round( end.x * 1000000 ) + ":" + Math.round( end.y * 1000000 );
+					var key = firstKey < secondKey ? firstKey + "/" + secondKey : secondKey + "/" + firstKey;
+					if (!ridgeKeys.exists( key )) { ridgeKeys.set( key, true ); result.ridges.push( new Polygon( [start, end] ) ); }
+				} );
+			}
+		}
+		return result;
+	}
+
+	private static function halfPlane( polygon:Polygon, normalX:Float, normalY:Float, bias:Float ):Array<Polygon> {
+		var minimum = Math.POSITIVE_INFINITY;
+		var maximum = Math.NEGATIVE_INFINITY;
+		for (point in polygon) {
+			var value = normalX * point.x + normalY * point.y + bias;
+			minimum = Math.min( minimum, value ); maximum = Math.max( maximum, value );
+		}
+		if (minimum >= -0.00000001) return [polygon];
+		if (maximum <= 0.00000001) return [];
+		var length = Math.sqrt( normalX * normalX + normalY * normalY );
+		if (length < 0.00000001) return bias >= 0 ? [polygon] : [];
+		var normal = new Point( normalX / length, normalY / length );
+		var center = polygon.centroid;
+		var distance = (normalX * center.x + normalY * center.y + bias) / length;
+		var origin = new Point( center.x - normal.x * distance, center.y - normal.y * distance );
+		var radius = 1.0;
+		for (point in polygon) radius = Math.max( radius, Point.distance( origin, point ) + 1 );
+		var tangent = new Point( -normal.y * radius, normal.x * radius );
+		var inward = new Point( normal.x * radius, normal.y * radius );
+		var normalize = function( shape:Polygon ):Polygon return new Polygon( [for (point in shape) new Point(
+			Math.fround( point.x * 10000000 ) / 10000000, Math.fround( point.y * 10000000 ) / 10000000 )] );
+		return [for (part in intersect( normalize( polygon ), normalize( new Polygon( [origin.subtract( tangent ), origin.add( tangent ),
+			origin.add( tangent ).add( inward ), origin.subtract( tangent ).add( inward )] ) ) )) normalize( part )];
 	}
 
 	private static function intersect( polygon:Polygon, clip:Polygon ):Array<Polygon> {

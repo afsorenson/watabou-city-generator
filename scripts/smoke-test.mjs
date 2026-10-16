@@ -1112,21 +1112,49 @@ try {
         [[0, 0], [8, 0], [8, 3], [3, 3], [3, 8], [0, 8]],
         [[0, 0], [10, 0], [10, 4], [7, 4], [7, 7], [3, 7], [3, 4], [0, 4]],
         [[0, 0], [7, 1], [5, 6], [1, 5]],
+        [[0, 0], [9, 1], [3, 7]],
+        [[0, 0], [8, 1], [10, 5], [5, 9], [-1, 5]],
+        [[0, 0], [9, 1], [8, 7], [5, 4], [2, 8], [-1, 5]],
+        [[0, 0], [1, 5], [5, 6], [7, 1]],
+        [[0, 0], [4, 0.5], [8, 1], [7, 6], [1, 5]],
       ];
       return fixtures.flatMap((fixture, fixtureIndex) => [0, Math.PI / 5].map(angle => {
         const footprint = fixture.map(point => new window.__testPoint(point[0] * Math.cos(angle) - point[1] * Math.sin(angle),
           point[0] * Math.sin(angle) + point[1] * Math.cos(angle)));
         const plan = window.__testRoofRenderer.plan(footprint);
         const points = polygon => polygon.map(point => [point.x, point.y]);
-        return { footprint: points(footprint), fixtureIndex, faces: plan.faces.map(face => ({ polygon: points(face.polygon), light: face.light })),
+        return { footprint: points(footprint), fixtureIndex, kind: plan.kind, faces: plan.faces.map(face => ({ polygon: points(face.polygon), light: face.light, color: face.color })),
           sections: plan.sections.map(points), ridges: plan.ridges.map(points) };
       }));
     });
     const areaOf = polygons => polygons.reduce((sum, polygon) => sum + polygonArea(polygon[0]), 0);
     for (const plan of fixturePlans) {
       const area = polygonArea(plan.footprint);
-      assert.ok(plan.faces.length >= 2 && plan.faces.some(face => face.light) && plan.faces.some(face => !face.light),
-        'Roof plans must include contrasting planes');
+      if (plan.fixtureIndex === 6) {
+        assert.equal(plan.kind, 'restrained', 'Difficult irregular concave shapes must use a restrained fallback');
+        assert.equal(plan.faces.length, 1);
+        assert.equal(plan.ridges.length, 0, 'Concave fallback must not invent a bounding-box ridge');
+      } else assert.ok(plan.faces.length >= 2 && plan.faces.some(face => face.light) && plan.faces.some(face => !face.light),
+        'Supported roof plans must include contrasting planes');
+      if ([3, 4, 5, 7, 8].includes(plan.fixtureIndex)) {
+        assert.equal(plan.kind, 'hipped', 'Suitable irregular convex footprints must receive hipped roofs');
+        assert.ok(plan.faces.length >= 3, 'A hip roof must have perimeter-driven faces rather than an arbitrary two-way split');
+        const boundary = plan.sections[0];
+        const distances = point => boundary.map((start, index) => {
+          const end = boundary[(index + 1) % boundary.length];
+          const direction = [end[0] - start[0], end[1] - start[1]];
+          return (direction[0] * (point[1] - start[1]) - direction[1] * (point[0] - start[0])) / Math.hypot(...direction);
+        });
+        for (const ridge of plan.ridges) {
+          for (const fraction of [0, 0.5, 1]) {
+            const point = [ridge[0][0] + fraction * (ridge[1][0] - ridge[0][0]),
+              ridge[0][1] + fraction * (ridge[1][1] - ridge[0][1])];
+            const heights = distances(point).sort((first, second) => first - second);
+            assert.ok(heights[0] >= -1e-5 && Math.abs(heights[0] - heights[1]) < 1e-5,
+              'Hip/ridge lines must join equal-height edge planes inside the footprint');
+          }
+        }
+      }
       if ([1, 2].includes(plan.fixtureIndex)) assert.ok(plan.sections.length > 1, 'L-shaped and stepped roofs need multiple sections');
       let covered = 0;
       for (let index = 0; index < plan.faces.length; index += 1) {
@@ -1146,6 +1174,18 @@ try {
     await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
     await (await flatDownload).saveAs('test-results/roof-flat-export.png');
     const flatBytes = await readFile('test-results/roof-flat-export.png');
+    const catalogBefore = JSON.parse(await readFile('Export/html5/bin/builds.json', 'utf8'));
+    const previousRoofBuild = catalogBefore.builds.find(build => build.commit === '9fcb9d3' && !build.dirty);
+    if (previousRoofBuild) {
+      await capture(page, `${url}/${previousRoofBuild.url}?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed`);
+      const previousExport = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+      await (await previousExport).saveAs('test-results/irregular-roofs-before-export.png');
+      await saveNeighborhood(await readFile('test-results/irregular-roofs-before-export.png'),
+        'test-results/irregular-roofs-before-neighborhood.png', 420, 420);
+      await capture(page, roofUrl);
+    }
+    await page.evaluate(() => { window.__beforeRoofModel = window.__testModel; });
     await page.getByLabel('Rendering style', { exact: true }).selectOption('roofed');
     await page.waitForFunction(() => window.cityGenerator.roofed === true);
     assert.equal(await geometryHash(page), initialGeometry, 'Roofed must not change buildings, roads, or walls');
@@ -1168,6 +1208,7 @@ try {
     });
     assert.ok(tones.every(count => count > 1000), 'Roof PNG must contain substantial light and dark roof planes');
     await saveNeighborhood(roofBytes, 'test-results/roofed-neighborhood.png', 500, 450);
+    await saveNeighborhood(roofBytes, 'test-results/irregular-roofs-after-neighborhood.png', 420, 420);
     await saveNeighborhood(flatBytes, 'test-results/roof-flat-neighborhood.png', 500, 450);
     await page.screenshot({ path: 'test-results/roofed-desktop.png' });
     await page.getByLabel('Rendering style', { exact: true }).selectOption('flat');
@@ -1209,6 +1250,23 @@ try {
       assert.ok(exported.suggestedFilename().includes('-roofed-'));
       await exported.saveAs(`test-results/roofed-${mode}.png`);
       assert.ok(pixelVariation(await readFile(`test-results/roofed-${mode}.png`)) > 10000);
+      const plans = await page.evaluate(() => {
+        const result = { hipped: 0, sectioned: 0, restrained: 0 };
+        for (const patch of window.__testModel.patches) {
+          for (const polygon of patch.ward.geometry) {
+            const area = Math.abs(polygon.reduce((sum, point, index) => {
+              const next = polygon[(index + 1) % polygon.length];
+              return sum + point.x * next.y - next.x * point.y;
+            }, 0) / 2);
+            if (area < 12) continue;
+            result[window.__testRoofRenderer.plan(polygon).kind] += 1;
+          }
+        }
+        return result;
+      });
+      assert.ok(plans.hipped > 0, 'The reported seed must exercise real irregular hipped roofs');
+      await writeFile(`test-results/irregular-roofs-${mode}.json`, JSON.stringify(plans, null, 2));
+      console.log(`PASS: irregular roof plans in ${mode}: ${JSON.stringify(plans)}`);
     }
     await page.getByLabel('Buildings', { exact: true }).selectOption('frontage');
     await page.getByRole('button', { name: 'Generate a new city' }).click();
