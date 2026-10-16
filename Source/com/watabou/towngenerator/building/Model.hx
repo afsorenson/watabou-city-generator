@@ -40,6 +40,7 @@ class Model {
 	public var prototypeRegions : Array<Polygon> = [];
 	public var prototypeAttempt : {patchIndex:Int, previousArea:Float, candidateArea:Float};
 	public var prototypeFailure : String;
+	public var prototypeJunctionBuildings : Int = 0;
 
 	// Small Town	6
 	// Large Town	10

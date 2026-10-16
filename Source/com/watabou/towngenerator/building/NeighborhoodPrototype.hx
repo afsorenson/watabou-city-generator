@@ -93,32 +93,48 @@ class NeighborhoodPrototype {
 			var rows = Std.int( Math.max( 1, Math.ceil( (maxDepth - minDepth) / (Math.sqrt( lotArea ) * 2.1 + laneWidth) ) ) );
 			var cellWidth = (maxSide - minSide) / columns;
 			var cellDepth = (maxDepth - minDepth) / rows;
+			var depthCuts = [for (index in 0...rows + 1) minDepth + cellDepth * (index +
+				(index == 0 || index == rows ? 0 : (((seed ^ (regionIndex * 73856093) ^ (index * 19349663)) & 0x7fffffff) % 21 - 10) / 100))];
+			var sideCuts = [for (row in 0...rows) [for (index in 0...columns + 1)
+				index == 0 ? minSide : (index == columns ? maxSide : minSide + cellWidth * (index +
+				(row % 2 == 0 ? -0.15 : 0.15) + (((seed ^ (regionIndex * 19349663) ^ (index * 73856093)) & 0x7fffffff) % 9 - 4) / 100))]];
 			for (row in 1...rows) {
-				var depth = minDepth + row * cellDepth;
+				var depth = depthCuts[row];
 				var lane = quad( junction, axis, minSide - 1, maxSide + 1, depth - laneWidth / 2, depth + laneWidth / 2 );
 				for (part in intersection( lane, region )) {
-					lanes.push( part ); kinds.push( "alley" ); widths.push( laneWidth );
+					lanes.push( part ); kinds.push( "local-cross" ); widths.push( laneWidth );
 					paths.push( new Polygon( [worldPoint( minSide - 1, depth, junction, axis ), worldPoint( maxSide + 1, depth, junction, axis )] ) );
 				}
 			}
-			for (column in 1...columns) {
-				var side = minSide + column * cellWidth;
-				var lane = quad( junction, axis, side - laneWidth / 2, side + laneWidth / 2, minDepth - 1, maxDepth + 1 );
+			for (row in 0...rows) for (column in 1...columns) {
+				var side = sideCuts[row][column];
+				var front = row == 0 ? minDepth - 1 : depthCuts[row] - laneWidth / 2;
+				var back = row == rows - 1 ? maxDepth + 1 : depthCuts[row + 1] + laneWidth / 2;
+				var lane = quad( junction, axis, side - laneWidth / 2, side + laneWidth / 2, front, back );
 				for (part in intersection( lane, region )) {
-					lanes.push( part ); kinds.push( "alley" ); widths.push( laneWidth );
-					paths.push( new Polygon( [worldPoint( side, minDepth - 1, junction, axis ), worldPoint( side, maxDepth + 1, junction, axis )] ) );
+					lanes.push( part ); kinds.push( "local-connector" ); widths.push( laneWidth );
+					paths.push( new Polygon( [worldPoint( side, front, junction, axis ), worldPoint( side, back, junction, axis )] ) );
 				}
 			}
 			for (row in 0...rows) for (column in 0...columns) {
-				var left = minSide + column * cellWidth + 0.06 + (column == 0 ? 0 : laneWidth / 2);
-				var right = minSide + (column + 1) * cellWidth - 0.06 - (column == columns - 1 ? 0 : laneWidth / 2);
-				var front = minDepth + row * cellDepth + 0.06 + (row == 0 ? 0 : laneWidth / 2);
-				var back = minDepth + (row + 1) * cellDepth - 0.06 - (row == rows - 1 ? 0 : laneWidth / 2);
+				var left = sideCuts[row][column] + 0.06 + (column == 0 ? 0 : laneWidth / 2);
+				var right = sideCuts[row][column + 1] - 0.06 - (column == columns - 1 ? 0 : laneWidth / 2);
+				var front = depthCuts[row] + 0.06 + (row == 0 ? 0 : laneWidth / 2);
+				var back = depthCuts[row + 1] - 0.06 - (row == rows - 1 ? 0 : laneWidth / 2);
 				var count = Std.int( Math.max( 1, Math.round( (right - left) / lotWidth ) ) );
-				for (lotRow in 0...2) for (lotIndex in 0...count) {
-					var plot = quad( junction, axis, left + lotIndex * (right - left) / count + 0.035,
-						left + (lotIndex + 1) * (right - left) / count - 0.035,
-						front + lotRow * (back - front) / 2 + 0.035, front + (lotRow + 1) * (back - front) / 2 - 0.035 );
+				var split = 0.4 + (((seed ^ (row * 73856093) ^ (column * 19349663) ^ regionIndex) & 0x7fffffff) % 21) / 100;
+				var fractions = [0.0, split, 1.0];
+				for (lotRow in 0...2) {
+				var weights = [for (index in 0...count) 0.75 + (((seed ^ (regionIndex * 73856093) ^ (row * 19349663)
+					^ (column * 15485863) ^ (lotRow * 49979687) ^ (index * 83492791)) & 0x7fffffff) % 51) / 100];
+				var total = 0.0;
+				for (weight in weights) total += weight;
+				var cursor = left;
+				for (lotIndex in 0...count) {
+					var width = (right - left) * weights[lotIndex] / total;
+					var plot = quad( junction, axis, cursor + 0.035, cursor + width - 0.035,
+						front + fractions[lotRow] * (back - front) + 0.035, front + fractions[lotRow + 1] * (back - front) - 0.035 );
+					cursor += width;
 					var parts = intersection( plot, region );
 					for (lane in lanes) parts = subtract( parts, lane );
 					for (part in parts) {
@@ -126,6 +142,34 @@ class NeighborhoodPrototype {
 						for (building in BuildingFootprints.fromFrontagePlot( part, plot, variation, true )) {
 							buildings.push( building ); plots.push( part ); groupIds.push( -1 );
 						}
+					}
+				}
+				}
+			}
+		}
+		var junctionBuildings = 0;
+		for (regionIndex in 0...regions.length) {
+			var axis = anchors[regionIndex].point.subtract( junction );
+			axis.normalize( 1 );
+			var next = anchors[(regionIndex + 1) % anchors.length].point.subtract( junction );
+			next.normalize( 1 );
+			var inward = axis.add( next );
+			if (inward.length < 0.01) continue;
+			inward.normalize( 1 );
+			for (step in 0...3) {
+				var distance = lotWidth * (0.7 + step * 0.6);
+				var origin = junction.add( new Point( inward.x * distance, inward.y * distance ) );
+				var plot = quad( origin, axis, -lotWidth * 0.45, lotWidth * 0.45, -lotWidth * 0.55, lotWidth * 0.55 );
+				var parts = intersection( plot, regions[regionIndex] );
+				for (lane in lanes) parts = subtract( parts, lane );
+				for (building in buildings) parts = subtract( parts, building );
+				for (part in parts) {
+					var variation = (seed ^ (regionIndex * 73856093) ^ (step * 19349663)) & 0x7fffffff;
+					var candidates = BuildingFootprints.fromFrontagePlot( part, plot, variation, true );
+					if (candidates.length == 0) candidates = BuildingFootprints.repairOutlier( part );
+					if (candidates.length == 0) candidates = fitPocket( part, axis, lotWidth );
+					for (building in candidates) {
+						buildings.push( building ); plots.push( part ); groupIds.push( -1 ); junctionBuildings++;
 					}
 				}
 			}
@@ -148,7 +192,45 @@ class NeighborhoodPrototype {
 		model.frontageGroupPassages[chosen] = groupPassages;
 		model.prototypePatchIndex = chosen;
 		model.prototypeRegions = regions;
+		model.prototypeJunctionBuildings = junctionBuildings;
 		#end
+	}
+
+	private static function fitPocket( pocket:Polygon, axis:Point, lotWidth:Float ):Array<Polygon> {
+		#if html5
+		var origin = pocket.centroid;
+		var minSide = Math.POSITIVE_INFINITY;
+		var maxSide = Math.NEGATIVE_INFINITY;
+		var minDepth = Math.POSITIVE_INFINITY;
+		var maxDepth = Math.NEGATIVE_INFINITY;
+		for (point in pocket) {
+			var offset = point.subtract( origin );
+			var side = offset.x * axis.x + offset.y * axis.y;
+			var depth = -offset.x * axis.y + offset.y * axis.x;
+			minSide = Math.min( minSide, side ); maxSide = Math.max( maxSide, side );
+			minDepth = Math.min( minDepth, depth ); maxDepth = Math.max( maxDepth, depth );
+		}
+		for (fraction in [0.55, 0.4, 0.3]) {
+			var width = lotWidth * fraction;
+			var depth = width * 1.25;
+			if (width < 0.8 || width + 0.08 > maxSide - minSide || depth + 0.08 > maxDepth - minDepth) continue;
+			for (sideIndex in 0...7) for (depthIndex in 0...7) {
+				var left = minSide + 0.04 + (maxSide - minSide - width - 0.08) * sideIndex / 6;
+				var front = minDepth + 0.04 + (maxDepth - minDepth - depth - 0.08) * depthIndex / 6;
+				var building = quad( origin, axis, left, left + width, front, front + depth );
+				var outside:Array<Array<Array<Array<Float>>>>;
+				try outside = untyped js.Browser.window.polygonClipping.difference( [ring( building )], [ring( pocket )] )
+				catch (error:Dynamic) continue;
+				var area = 0.0;
+				for (polygon in outside) {
+					var outline = polygon[0];
+					area += Math.abs( new Polygon( [for (point in outline.slice( 0, outline.length - 1 )) new Point( point[0], point[1] )] ).square );
+				}
+				if (area < 0.0000001) return [building];
+			}
+		}
+		#end
+		return [];
 	}
 
 	private static function intersection( first:Polygon, second:Polygon ):Array<Polygon> {

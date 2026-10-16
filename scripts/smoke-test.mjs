@@ -1431,7 +1431,9 @@ try {
         shapes: model.patches.map(patch => points(patch.shape)), streets: model.streets.map(points), roads: model.roads.map(points),
         wall: model.wall ? points(model.wall.shape) : null, lanes: model.frontageLanes.map(lanes => lanes.map(points)),
         lanePaths: model.frontageLanePaths.map(paths => paths.map(points)),
+        laneKinds: model.frontageLaneKinds,
         target: model.prototypePatchIndex, regions: model.prototypeRegions.map(points), attempt: model.prototypeAttempt,
+        junctionBuildings: model.prototypeJunctionBuildings,
         block: model.prototypePatchIndex >= 0 ? points(model.frontageBlocks[model.prototypePatchIndex]) : [],
       };
     });
@@ -1445,6 +1447,7 @@ try {
     await page.waitForFunction(() => window.cityGenerator.prototype);
     const prototype = await snapshot();
     assert.ok(prototype.target >= 0, `Reported seed must produce an accepted prototype: ${JSON.stringify(prototype.attempt)}`);
+    assert.ok(prototype.junctionBuildings > 0, 'The refined prototype must add real safe frontage near the junction');
     const changed = prototype.buildings.flatMap((buildings, index) => JSON.stringify(buildings) !== JSON.stringify(standard.buildings[index]) ? [index] : []);
     assert.deepEqual(changed, [prototype.target], 'Exactly one neighborhood may change');
     assert.deepEqual(prototype.streets, standard.streets, 'Main streets must remain exact');
@@ -1469,6 +1472,20 @@ try {
     const pending = [...reached];
     while (pending.length) for (const next of adjacency.get(pending.pop())) if (!reached.has(next)) { reached.add(next); pending.push(next); }
     assert.equal(reached.size, active.length, 'Every prototype lane must connect to a block-boundary route');
+    let localTJunctions = 0;
+    const laneKinds = prototype.laneKinds[prototype.target];
+    for (const connector of active.filter(index => laneKinds[index] === 'local-connector')) {
+      for (const cross of active.filter(index => laneKinds[index] === 'local-cross')) {
+        const joint = polygonClipping.intersection([lanes[connector]], [lanes[cross]], [prototype.block]);
+        if (areaOf(joint) <= tolerance) continue;
+        for (const other of active.filter(index => index !== connector && laneKinds[index] === 'local-connector')) {
+          assert.ok(areaOf(polygonClipping.intersection(joint, [lanes[other]])) < tolerance,
+            'Staggered local connectors must terminate at separate T-junctions, not form four-way crossings');
+        }
+        localTJunctions += 1;
+      }
+    }
+    assert.ok(localTJunctions > 0, 'Refined prototype must contain real local T-junctions');
     for (let index = 0; index < buildings.length; index += 1) {
       const building = buildings[index];
       assert.ok(areaOf(polygonClipping.difference([building], [prototype.block])) < tolerance);
@@ -1493,7 +1510,8 @@ try {
     assert.ok(afterOrientation.dominant < beforeOrientation.dominant - 0.1,
       `Prototype must reduce dominant parallel frontage: ${beforeOrientation.dominant} -> ${afterOrientation.dominant}`);
     await writeFile('test-results/prototype-audit.json', JSON.stringify({ target: prototype.target, oldArea, newArea,
-      beforeOrientation, afterOrientation, connectedLanes: active.length, districtsChanged: changed }, null, 2));
+      beforeOrientation, afterOrientation, connectedLanes: active.length, districtsChanged: changed,
+      localTJunctions, junctionBuildings: prototype.junctionBuildings }, null, 2));
     await page.screenshot({ path: 'test-results/prototype-after-desktop.png' });
     const exportPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
@@ -1504,6 +1522,25 @@ try {
     assert.ok(crop && crop.left >= 0 && crop.top >= 0, 'Accepted prototype must identify its matching export crop');
     await saveNeighborhood(await readFile('test-results/prototype-before-export.png'), 'test-results/prototype-before-neighborhood.png', crop.left, crop.top);
     await saveNeighborhood(await readFile('test-results/prototype-after-export.png'), 'test-results/prototype-after-neighborhood.png', crop.left, crop.top);
+    const catalog = JSON.parse(await readFile('Export/html5/bin/builds.json', 'utf8'));
+    const firstPrototype = catalog.builds.find(build => build.commit === '6332b72' && !build.dirty);
+    if (firstPrototype) {
+      await capture(page, `${url}/${firstPrototype.url}?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed&layout=prototype`);
+      const first = await snapshot();
+      assert.equal(first.target, prototype.target, 'Refinement must use the same district as the first prototype');
+      first.buildings.forEach((buildings, index) => {
+        if (index !== prototype.target) assert.deepEqual(buildings, prototype.buildings[index], 'Refinement must leave every other district exact');
+      });
+      const oldExport = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export PNG', exact: true }).click();
+      await (await oldExport).saveAs('test-results/prototype-refinement-before-export.png');
+      await saveNeighborhood(await readFile('test-results/prototype-refinement-before-export.png'),
+        'test-results/prototype-refinement-before-neighborhood.png', crop.left, crop.top);
+      await saveNeighborhood(await readFile('test-results/prototype-after-export.png'),
+        'test-results/prototype-refinement-after-neighborhood.png', crop.left, crop.top);
+      await page.goto(`${prototypeUrl}&layout=prototype`);
+      await page.waitForFunction(() => window.cityGenerator?.prototype);
+    }
     const bounds = prototype.block.reduce((result, point) => ({ minX: Math.min(result.minX, point[0]), maxX: Math.max(result.maxX, point[0]),
       minY: Math.min(result.minY, point[1]), maxY: Math.max(result.maxY, point[1]) }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
     const city = prototype.shapes.flat().reduce((result, point) => ({ minX: Math.min(result.minX, point[0]), maxX: Math.max(result.maxX, point[0]),
@@ -1565,7 +1602,7 @@ try {
     await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('standard');
     await page.getByLabel('Neighborhood layout', { exact: true }).selectOption('prototype');
     assert.deepEqual((await snapshot()).buildings, prototype.buildings, 'Prototype must recover after a safely rejected attempt');
-    console.log(`PASS: one-district prototype ${prototype.target}; connected lanes ${active.length}; coverage ${oldArea.toFixed(1)} -> ${newArea.toFixed(1)}; dominant orientation ${beforeOrientation.dominant.toFixed(3)} -> ${afterOrientation.dominant.toFixed(3)}`);
+    console.log(`PASS: one-district prototype ${prototype.target}; connected lanes ${active.length}; T-junctions ${localTJunctions}; junction infill ${prototype.junctionBuildings}; coverage ${oldArea.toFixed(1)} -> ${newArea.toFixed(1)}; dominant orientation ${beforeOrientation.dominant.toFixed(3)} -> ${afterOrientation.dominant.toFixed(3)}`);
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');

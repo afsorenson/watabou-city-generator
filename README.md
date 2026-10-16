@@ -148,7 +148,14 @@ experiment. Standard remains the default. The prototype chooses the largest
 suitable convex regenerated district, connects three perimeter entrances through
 an interior junction, and fills the resulting regions with shorter rows aligned
 to different local branches. Narrow local alleys remain connected to the boundary
-route network. It does not change main roads, walls, district shapes, landmarks,
+route network. Local connectors stop at band cross-lanes and are staggered between
+bands, creating separate T-junctions rather than full-depth four-way crossings.
+Frontage widths and row depths vary deterministically. Small branch-aligned
+infill candidates can occupy usable pockets near the interior junction; each is
+clipped around roads and existing buildings, and numerical containment failures
+reject only that candidate. This tightens the meeting space without treating it
+as a new plaza or reducing the reserved road width.
+It does not change main roads, walls, district shapes, landmarks,
 or buildings and lanes in other districts.
 
 ```text
@@ -162,10 +169,18 @@ seed restoration, build comparisons, and PNG filenames. Switching back to Standa
 restores the exact baseline.
 
 At size 40, seed 1091337103, walls on, district index 38 is the only changed
-district. Its tested building area changes from approximately 1151.0 to 1172.6
-(about +1.9%), all 14 active lane sections connect to block-boundary routes, and
-the largest 15-degree frontage-orientation bin falls from 72.9% to 33.5% of building
+district. Its tested building area changes from approximately 1151.0 to 1180.0
+(about +2.5%), all 22 active lane sections connect to block-boundary routes, 16
+local T-junction connections and two safe junction-frontage infill buildings are
+present, and the largest 15-degree frontage-orientation bin falls from 72.9% to 29.3% of building
 area. These are fixed-fixture measurements, not universal promises.
+
+The first prototype build (`6332b72`) remains available in local build history.
+Set both comparison layouts to One District to review the first prototype against
+the refined version. With that archive available, tests require the same selected
+district and identical geometry everywhere outside it. Matching crops are
+`prototype-refinement-before-neighborhood.png` and
+`prototype-refinement-after-neighborhood.png` under `test-results/`.
 
 This is a prototype for visual review, not a city-wide rollout. Its local regions
 still use structured lots and currently retain detached clusters rather than
