@@ -7,7 +7,7 @@ import booleanPointOnLine from '@turf/boolean-point-on-line';
 import lineIntersect from '@turf/line-intersect';
 
 export const ENGINE_ID = 'frontage-city-engine';
-export const ENGINE_VERSION = '0.2.0';
+export const ENGINE_VERSION = '0.3.0';
 export const CONTRACT_VERSION = 1;
 export type Position = [number, number];
 export type Polygon = { type: 'Polygon'; coordinates: Position[][] };

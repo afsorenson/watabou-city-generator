@@ -17,35 +17,36 @@ not approval of road composition.
 
 ## Generator
 
-`Engine/streets.ts` uses the pinned `pathfinding` A* implementation over an
-occupancy grid derived from the validated buildable multipolygon. Grid cells are
-marked walkable only when their center and a 12-point radial clearance sample fit
-inside buildable land; the sample radius is half the widest street class (7 m).
-Routes use four-way movement, preventing diagonal corner-cutting through narrow
-obstacles. The test suite additionally samples street-width boundaries at multiple
-points along every segment against the buildable polygons.
+`Engine/streets.ts` uses a pinned Delaunay triangulation to construct irregular
+junction relationships, plus the pinned `pathfinding` A* implementation to route
+them over an occupancy grid derived from the validated buildable multipolygon.
+Walkable cells require a radial clearance margin for the widest road. A* uses
+eight-direction movement without corner cutting; a greedy line-of-sight simplifier
+removes cell-scale turns only when every rasterized grid point remains walkable.
 
-The network starts with a roughly 115 m staggered lattice, bounded to 2-14 rows
-and columns per axis. Junctions receive deterministic seed-based jitter and snap
-to nearby clearance-safe cells. Neighboring junctions route horizontally and
-vertically with A*, allowing paths to detour around coastlines and exclusions.
-Lattice rows/columns at every third interval are primary streets (14 m); remaining
-routes are secondary streets (9 m). Required entrances connect to the nearest
-junction through 7 m access streets. All dimensions are planar meters.
+Candidate junctions are sampled deterministically from walkable cells with a
+minimum spacing, producing a blue-noise-like distribution rather than rows and
+columns. Delaunay edges form a local neighbor graph. A minimum-spanning backbone
+connects the sampled points, while selected short Delaunay edges add side-street
+loops. A small set of more widely spaced hubs is linked by primary routes (14 m);
+the mesh is secondary streets (9 m), and required boundary entrances get 7 m access
+streets. Current spacings and road counts are internal defaults, not user controls.
 
-Raw grid paths are merged into polylines while preserving junctions, bends, and
-street-class changes as graph nodes. Crossings share grid nodes, so graph
-connectivity is explicit rather than inferred from visual line intersections.
-Street IDs and positions are stable for the same contract, engine version, and
-seed. A changed seed changes junction placement. A* routes remain deterministic
-for a fixed occupancy grid.
+Centerlines preserve junction endpoints and smooth the route between them.
+Multi-bend paths use corner rounding. Long direct connectors use seeded cubic
+Bézier-like bows. Each candidate curve is sampled across its full street width
+against buildable land, and against existing centerlines to avoid unconnected
+crossings; curves that fail those checks fall back to the terrain-safe route.
+Crossings in the graph itself remain shared junction nodes. Roads are therefore
+not allowed to visually jump over a barrier or form an unrepresented intersection.
 
-This is an initial urban scaffold, not a final style system. The jittered orthogonal
-lattice can still feel overly regular, and the fixed road spacing/widths are not
-user-configurable. The radial occupancy and width tests are discrete samples, not
-a proof that every point of a continuous buffered road polygon fits the buildable
-mask. Exact corridor geometry, street hierarchy refinement, and stronger
-conformance checks remain candidates for later refinement before deriving blocks.
+The output still does not have the user's desired final urban character. It is an
+irregular procedural street mesh with a visibly dominant hub/radial structure and
+no user-placed civic anchors. Some routes can remain straight where curvature
+would be unsafe. The raster clearance and sampled road-width checks provide strong
+practical safeguards, not a mathematical proof for continuous buffered polygons.
+The next visual refinement should focus on varied hierarchy/settlement structure,
+less radial dominance, and user-directed anchors before block generation.
 
 ## Output And Failures
 
@@ -87,10 +88,12 @@ label. Neither artifact contains blocks or buildings at this phase.
 8. Confirm streets are visualized/exported and blocks, plots, and buildings remain
    empty.
 
-The automated Phase 2 gate verifies deterministic output, graph connectivity,
-entrance attachment, seed variation, centerline and sampled width clearance,
-disconnected-region reporting, desktop/mobile rendering, layer toggling, and JSON
-export. Passing tests does not substitute for the urban-composition visual review.
+The automated Phase 2 gate verifies deterministic output, non-grid bearings,
+curved multi-point centerlines including primary routes, side-street density,
+branch junctions, graph connectivity, entrance attachment, seed variation,
+centerline and sampled width clearance, disconnected-region reporting,
+desktop/mobile open/coast/exclusion rendering, layer toggling, and JSON export.
+Passing tests does not substitute for the urban-composition visual review.
 
 ## Verification
 

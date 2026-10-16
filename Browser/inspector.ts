@@ -161,6 +161,7 @@ function refreshPanels(){
     ?`Connected network · ${streetResult.streets.nodes.length} junctions · ${streetResult.streets.edges.length} streets`
     :`Disconnected · ${streetResult.streets.components} components · some land is unreachable`):'No street network generated';
   streetStatus.classList.toggle('invalid',Boolean(streetResult&&!streetResult.streets.connected));
+  element<HTMLDivElement>('#street-legend').hidden=!streetResult;
   element<HTMLButtonElement>('#generate-streets').disabled=!valid;
   element<HTMLOutputElement>('#contract-fingerprint').textContent=fingerprint?`SHA-256 ${fingerprint}`:'';
   if(site){seedInput.value=String(site.seed);const background=site.background;const form=element<HTMLFormElement>('#registration-form');

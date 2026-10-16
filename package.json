@@ -21,6 +21,7 @@
     "test:inspector": "node scripts/test-inspector.mjs"
   },
   "devDependencies": {
+    "@types/d3-delaunay": "6.0.4",
     "@types/pathfinding": "0.1.0",
     "esbuild": "0.25.12",
     "lucide-static": "0.468.0",
@@ -34,6 +35,7 @@
     "@turf/boolean-valid": "7.2.0",
     "@turf/kinks": "7.2.0",
     "@turf/line-intersect": "7.2.0",
+    "d3-delaunay": "6.0.4",
     "pathfinding": "0.4.18",
     "polygon-clipping": "0.15.7",
     "polylabel": "2.0.1",

@@ -40,6 +40,7 @@ try {
     await page.locator('#generate-streets').click(); current=await state(page);
     assert.equal(current.phase,'streets'); assert.equal(current.result.streets.connected,true);
     assert.ok(current.result.streets.edges.length>20); assert.deepEqual(current.result.blocks,[]); assert.deepEqual(current.result.buildings,[]);
+    assert.equal(await page.locator('#street-legend').isVisible(),true);
     await capture(page,`${viewport.width}-streets`);
     const streetPixels=await page.locator('#contract-map').screenshot();
     await page.getByRole('checkbox',{name:'Show streets',exact:true}).uncheck();
@@ -50,6 +51,8 @@ try {
     assert.equal(streetExport.result.phase,'streets');assert.equal(streetExport.result.streets.connected,true);
     assert.equal(streetExport.result.streets.edges.length,current.result.streets.edges.length);
     await fixture(page,'coast'); current=await state(page); assert.ok(current.validation.metrics.waterArea>0);
+    await page.locator('#generate-streets').click();current=await state(page);assert.equal(current.result.streets.connected,true);
+    await capture(page,`${viewport.width}-coast-streets`);
     await page.locator('#approve-contract').click(); assert.equal((await state(page)).approval.status,'approved');
     const originalHash=(await state(page)).fingerprint;
     await page.reload(); await ready(page); assert.equal((await state(page)).approval?.status,'approved','Exact persisted review must restore');
@@ -60,6 +63,8 @@ try {
     assert.deepEqual(current.contract.background.origin,[50,-20]); assert.equal(current.contract.background.rotationDegrees,15);
     await capture(page,`${viewport.width}-registration`);
     await fixture(page,'exclusion'); current=await state(page); assert.ok(current.validation.buildable.some(part=>part.length>1));
+    await page.locator('#generate-streets').click();current=await state(page);assert.equal(current.result.streets.connected,true);
+    await capture(page,`${viewport.width}-exclusion-streets`);
     const visible = await page.locator('#contract-map').screenshot();
     await page.getByRole('checkbox',{name:'Show forbidden',exact:true}).uncheck();
     assert.notDeepEqual(await page.locator('#contract-map').screenshot(),visible,'Layer toggle must affect pixels');

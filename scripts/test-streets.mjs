@@ -22,9 +22,15 @@ function verifyGraph(site, result) {
   assert.equal(streets.components, 1);
   assert.ok(streets.nodes.length > 8 && streets.edges.length > 8, 'Network must cover the site with real junctions');
   assert.ok(streets.edges.some(edge => edge.kind === 'primary'));
-  assert.ok(streets.edges.some(edge => edge.kind === 'secondary'));
+  assert.ok(streets.edges.filter(edge => edge.kind === 'secondary').length > streets.edges.filter(edge => edge.kind === 'primary').length * 2,
+    'The primary hierarchy must be supported by a denser side-street network');
+  assert.ok(streets.edges.filter(edge => edge.centerline.length > 2).length > streets.edges.length * .5,
+    'Most routes should contain rounded, multi-point centerlines');
+  assert.ok(streets.edges.some(edge => edge.kind === 'primary' && edge.centerline.length >= 17),
+    'Long primary routes should use sampled Bézier-like curves');
   const nodeById = new Map(streets.nodes.map(node => [node.id, node]));
   const adjacent = new Map(streets.nodes.map(node => [node.id, []]));
+  const directions = new Set();
   const validation = validateSite(site);
   const land = validation.buildable.map(coordinates => ({ type: 'Polygon', coordinates }));
   for (const edge of streets.edges) {
@@ -35,6 +41,7 @@ function verifyGraph(site, result) {
     adjacent.get(edge.start).push(edge.end); adjacent.get(edge.end).push(edge.start);
     for (let index = 0; index < edge.centerline.length; index += 1) {
       const point = edge.centerline[index];
+      if (index) directions.add(Math.round(Math.atan2(point[1] - edge.centerline[index - 1][1], point[0] - edge.centerline[index - 1][0]) * 180 / Math.PI / 15));
       assert.ok(land.some(polygon => booleanPointInPolygon({ type: 'Point', coordinates: point }, polygon)),
         `Street ${edge.id} leaves buildable land at ${point}`);
       if (index) {
@@ -56,6 +63,8 @@ function verifyGraph(site, result) {
       }
     }
   }
+  assert.ok(directions.size >= 12, 'Street bearings should not collapse into a checkerboard of cardinal/diagonal axes');
+  assert.ok([...adjacent.values()].filter(neighbors => neighbors.length >= 3).length >= 8, 'Side streets should form a network of real junctions');
   const reached = new Set([streets.nodes[0].id]); const pending = [streets.nodes[0].id];
   while (pending.length) for (const neighbor of adjacent.get(pending.pop()) ?? []) if (!reached.has(neighbor)) { reached.add(neighbor); pending.push(neighbor); }
   assert.equal(reached.size, streets.nodes.length, 'Graph topology must connect through its junction nodes');
@@ -86,4 +95,4 @@ const disconnected = generateStreetNetwork(split);
 assert.equal(disconnected.streets.connected, false, 'A network may not claim to connect across a forbidden barrier');
 assert.ok(disconnected.streets.components > 1);
 assert.ok(disconnected.issues.some(issue => issue.code === 'STREET_NETWORK_DISCONNECTED'));
-console.log('PASS: deterministic A* street lattice, entrance connections, graph junctions/connectivity, buildable clearance, seed variation, and unreachable-region reporting');
+console.log('PASS: deterministic Delaunay street network, Bézier-like primary routes, rounded side streets, entrance connections, graph topology, clearance, seed variation, and unreachable-region reporting');

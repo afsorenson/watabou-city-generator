@@ -1,5 +1,7 @@
 import PathFinding from 'pathfinding';
+import { Delaunay } from 'd3-delaunay';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import lineIntersect from '@turf/line-intersect';
 import { contractResult, validateSite, type EngineResult, type Issue, type Land, type Position, type SiteContract, type StreetGraph } from './contracts';
 
 type Cell = { x: number; y: number };
@@ -7,6 +9,7 @@ type RoadKind = 'primary' | 'secondary' | 'access';
 type RawNode = { position: Position; preserve?: boolean };
 type RawEdge = { start: string; end: string; kind: RoadKind };
 const widthByKind: Record<RoadKind, number> = { primary: 14, secondary: 9, access: 7 };
+const interpolateGridLine = (PathFinding.Util as unknown as { interpolate: (x0: number, y0: number, x1: number, y1: number) => number[][] }).interpolate;
 const nodeId = (key: string) => `street-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 const cellKey = (cell: Cell) => `c-${cell.x}-${cell.y}`;
 const edgeKey = (first: string, second: string) => first < second ? `${first}|${second}` : `${second}|${first}`;
@@ -25,6 +28,84 @@ function randomFor(seed: number) {
 function pointIn(land: Land, point: Position) {
   const candidate = { type: 'Point' as const, coordinates: point };
   return land.some(part => booleanPointInPolygon(candidate, { type: 'Polygon', coordinates: part as Position[][] }));
+}
+
+function simplify(points: Position[]): Position[] {
+  if (points.length < 3) return points;
+  const result = [points[0]];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const first = result[result.length - 1]; const middle = points[index]; const last = points[index + 1];
+    const cross = (middle[0] - first[0]) * (last[1] - middle[1]) - (middle[1] - first[1]) * (last[0] - middle[0]);
+    if (Math.abs(cross) > 1e-6) result.push(middle);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+function rounded(points: Position[]): Position[] {
+  if (points.length < 3) return points;
+  let result = points;
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const next: Position[] = [result[0]];
+    for (let index = 1; index < result.length; index += 1) {
+      const first = result[index - 1]; const second = result[index];
+      next.push([first[0] * .75 + second[0] * .25, first[1] * .75 + second[1] * .25]);
+      next.push([first[0] * .25 + second[0] * .75, first[1] * .25 + second[1] * .75]);
+    }
+    next.push(result[result.length - 1]); result = next;
+  }
+  return result;
+}
+
+function bowed(points: Position[], seed: number, strength: number): Position[] {
+  if (points.length !== 2) return rounded(points);
+  const [start, end] = points;
+  const dx = end[0] - start[0]; const dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  if (length < 35) return points;
+  const normal: Position = [-dy / length, dx / length];
+  const offset = (randomFor(seed)() * 2 - 1) * Math.min(length * strength, 48);
+  const firstControl: Position = [start[0] + dx / 3 + normal[0] * offset, start[1] + dy / 3 + normal[1] * offset];
+  const secondControl: Position = [start[0] + dx * 2 / 3 + normal[0] * offset, start[1] + dy * 2 / 3 + normal[1] * offset];
+  return Array.from({ length: 17 }, (_value, index) => {
+    const t = index / 16; const inverse = 1 - t;
+    return [inverse ** 3 * start[0] + 3 * inverse ** 2 * t * firstControl[0] + 3 * inverse * t ** 2 * secondControl[0] + t ** 3 * end[0],
+      inverse ** 3 * start[1] + 3 * inverse ** 2 * t * firstControl[1] + 3 * inverse * t ** 2 * secondControl[1] + t ** 3 * end[1]];
+  });
+}
+
+function clearOfExistingRoads(points: Position[], start: string, end: string, roads: StreetGraph['edges']) {
+  const candidate = { type: 'LineString' as const, coordinates: points };
+  for (const road of roads) {
+    const sharedEndpoints: [Position, Position][] = [];
+    if (road.start === nodeId(start)) sharedEndpoints.push([points[0], road.centerline[0]]);
+    if (road.end === nodeId(start)) sharedEndpoints.push([points[0], road.centerline[road.centerline.length - 1]]);
+    if (road.start === nodeId(end)) sharedEndpoints.push([points[points.length - 1], road.centerline[0]]);
+    if (road.end === nodeId(end)) sharedEndpoints.push([points[points.length - 1], road.centerline[road.centerline.length - 1]]);
+    const intersections = lineIntersect(candidate, { type: 'LineString', coordinates: road.centerline }).features;
+    for (const intersection of intersections) {
+      const [x, y] = intersection.geometry.coordinates;
+      if (!sharedEndpoints.some(([first, second]) => Math.hypot(x - first[0], y - first[1]) < .001
+        && Math.hypot(x - second[0], y - second[1]) < .001)) return false;
+    }
+  }
+  return true;
+}
+
+function roadFits(points: Position[], width: number, land: Land, cellSize: number, entrances: Position[], allowGate = false) {
+  const directions = Array.from({ length: 16 }, (_value, index) => index * Math.PI / 8);
+  for (let index = 1; index < points.length; index += 1) {
+    const first = points[index - 1]; const second = points[index];
+    const length = Math.hypot(second[0] - first[0], second[1] - first[1]);
+    const samples = Math.max(1, Math.ceil(length / (cellSize * .5)));
+    for (let sample = 0; sample <= samples; sample += 1) {
+      const fraction = sample / samples;
+      const center: Position = [first[0] + (second[0] - first[0]) * fraction, first[1] + (second[1] - first[1]) * fraction];
+      if (allowGate && entrances.some(entrance => Math.hypot(center[0] - entrance[0], center[1] - entrance[1]) < width)) continue;
+      for (const angle of directions) if (!pointIn(land, [center[0] + Math.cos(angle) * width / 2, center[1] + Math.sin(angle) * width / 2])) return false;
+    }
+  }
+  return true;
 }
 
 export function generateStreetNetwork(site: SiteContract): EngineResult {
@@ -46,7 +127,7 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
   const gridHeight = Math.max(1, Math.ceil(spanY / cellSize));
   const origin: Position = [minX, minY];
   const positionOf = (cell: Cell): Position => [origin[0] + (cell.x + .5) * cellSize, origin[1] + (cell.y + .5) * cellSize];
-  const clearance = Math.max(...Object.values(widthByKind)) / 2;
+  const clearance = Math.max(...Object.values(widthByKind)) / 2 + cellSize * .55;
   const probes = Array.from({ length: 12 }, (_value, index) => index * Math.PI / 6);
   const matrix = Array.from({ length: gridHeight }, (_row, y) => Array.from({ length: gridWidth }, (_cell, x) => {
     const center = positionOf({ x, y });
@@ -83,9 +164,22 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     }
     return closest;
   };
-  const route = (start: Cell, end: Cell): Cell[] => new PathFinding.AStarFinder({
-    diagonalMovement: PathFinding.DiagonalMovement.Never,
-  }).findPath(start.x, start.y, end.x, end.y, grid.clone()).map(([x, y]) => ({ x, y }));
+  const route = (start: Cell, end: Cell): Cell[] => {
+    const path = new PathFinding.AStarFinder({ diagonalMovement: PathFinding.DiagonalMovement.OnlyWhenNoObstacles,
+      heuristic: PathFinding.Heuristic.octile }).findPath(start.x, start.y, end.x, end.y, grid.clone());
+    if (path.length < 3) return path.map(([x, y]) => ({ x, y }));
+    const visible = [path[0]];
+    let startIndex = 0;
+    while (startIndex < path.length - 1) {
+      let furthest = startIndex + 1;
+      for (let endIndex = path.length - 1; endIndex > startIndex + 1; endIndex -= 1) {
+        const line = interpolateGridLine(path[startIndex][0], path[startIndex][1], path[endIndex][0], path[endIndex][1]);
+        if (line.every(([x, y]) => grid.isWalkableAt(x, y))) { furthest = endIndex; break; }
+      }
+      visible.push(path[furthest]); startIndex = furthest;
+    }
+    return PathFinding.Util.expandPath(visible).map(([x, y]) => ({ x, y }));
+  };
   const addRoute = (path: Cell[], kind: RoadKind) => {
     for (let index = 1; index < path.length; index += 1) {
       const first = cellKey(path[index - 1]); const second = cellKey(path[index]);
@@ -93,32 +187,70 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     }
   };
 
-  const columnCount = Math.max(2, Math.min(14, Math.round(spanX / 115) + 1));
-  const rowCount = Math.max(2, Math.min(14, Math.round(spanY / 115) + 1));
-  const anchors: { row: number; column: number; cell: Cell }[] = [];
-  for (let row = 0; row < rowCount; row += 1) {
-    for (let column = 0; column < columnCount; column += 1) {
-      const spacingX = spanX * .78 / (columnCount - 1); const spacingY = spanY * .78 / (rowCount - 1);
-      const target: Position = [minX + spanX * .11 + column * spacingX + (random() - .5) * spacingX * .14,
-        minY + spanY * .11 + row * spacingY + (random() - .5) * spacingY * .14];
-      const cell = nearestWalkable(target, Math.max(cellSize * 2, Math.min(spacingX, spacingY) * .35));
-      if (cell && !anchors.some(anchor => anchor.cell.x === cell.x && anchor.cell.y === cell.y)) anchors.push({ row, column, cell });
-    }
+  const candidates: Cell[] = [];
+  for (let y = 0; y < gridHeight; y += 1) for (let x = 0; x < gridWidth; x += 1) if (grid.isWalkableAt(x, y)) candidates.push({ x, y });
+  for (let index = candidates.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1)); [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
   }
-  const connect = (first: typeof anchors[number], second: typeof anchors[number], kind: RoadKind) => {
-    const path = route(first.cell, second.cell);
+  const anchors: Cell[] = [];
+  const spacing = Math.max(cellSize * 8, extent * .075);
+  for (const candidate of candidates) {
+    const position = positionOf(candidate);
+    if (anchors.every(anchor => Math.hypot(positionOf(anchor)[0] - position[0], positionOf(anchor)[1] - position[1]) >= spacing)) anchors.push(candidate);
+    if (anchors.length >= 110) break;
+  }
+  const connect = (first: Cell, second: Cell, kind: RoadKind) => {
+    const path = route(first, second);
     if (!path.length) return false;
     addRoute(path, kind); return true;
   };
-  for (let row = 0; row < rowCount; row += 1) {
-    const line = anchors.filter(anchor => anchor.row === row).sort((first, second) => first.column - second.column);
-    for (let index = 1; index < line.length; index += 1)
-      connect(line[index - 1], line[index], row % 3 === 0 ? 'primary' : 'secondary');
+  const center: Position = [(minX + maxX) / 2, (minY + maxY) / 2];
+  const hubs: Cell[] = [];
+  const firstHub = anchors.slice().sort((first, second) => Math.hypot(positionOf(first)[0] - center[0], positionOf(first)[1] - center[1])
+    - Math.hypot(positionOf(second)[0] - center[0], positionOf(second)[1] - center[1]))[0];
+  if (firstHub) hubs.push(firstHub);
+  const hubCount = Math.min(5, Math.max(2, Math.round(Math.sqrt(anchors.length) * .55)), anchors.length);
+  while (hubs.length < hubCount) {
+    const next = anchors.filter(candidate => !hubs.some(hub => hub.x === candidate.x && hub.y === candidate.y))
+      .sort((first, second) => Math.min(...hubs.map(hub => Math.hypot(positionOf(first)[0] - positionOf(hub)[0], positionOf(first)[1] - positionOf(hub)[1])))
+        - Math.min(...hubs.map(hub => Math.hypot(positionOf(second)[0] - positionOf(hub)[0], positionOf(second)[1] - positionOf(hub)[1])))).pop();
+    if (!next) break;
+    const nearest = hubs.slice().sort((first, second) => Math.hypot(positionOf(first)[0] - positionOf(next)[0], positionOf(first)[1] - positionOf(next)[1])
+      - Math.hypot(positionOf(second)[0] - positionOf(next)[0], positionOf(second)[1] - positionOf(next)[1]))[0];
+    connect(nearest, next, 'primary'); hubs.push(next);
   }
-  for (let column = 0; column < columnCount; column += 1) {
-    const line = anchors.filter(anchor => anchor.column === column).sort((first, second) => first.row - second.row);
-    for (let index = 1; index < line.length; index += 1)
-      connect(line[index - 1], line[index], column % 3 === 0 ? 'primary' : 'secondary');
+
+  if (anchors.length > 1) {
+    const coordinates = anchors.map(positionOf);
+    const delaunay = Delaunay.from(coordinates, point => point[0], point => point[1]);
+    const candidateEdges = new Map<string, { first: number; second: number; distance: number }>();
+    const addCandidate = (first: number, second: number) => {
+      if (first === second) return;
+      const key = first < second ? `${first}:${second}` : `${second}:${first}`;
+      if (candidateEdges.has(key)) return;
+      const a = coordinates[first]; const b = coordinates[second];
+      candidateEdges.set(key, { first, second, distance: Math.hypot(a[0] - b[0], a[1] - b[1]) });
+    };
+    for (let index = 0; index < delaunay.triangles.length; index += 3) {
+      const first = delaunay.triangles[index]; const second = delaunay.triangles[index + 1]; const third = delaunay.triangles[index + 2];
+      addCandidate(first, second); addCandidate(second, third); addCandidate(third, first);
+    }
+    if (!candidateEdges.size) for (let first = 0; first < anchors.length; first += 1)
+      for (let second = first + 1; second < anchors.length; second += 1) addCandidate(first, second);
+    const candidatesByDistance = Array.from(candidateEdges.values()).sort((first, second) => first.distance - second.distance);
+    const parent = anchors.map((_anchor, index) => index);
+    const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
+    const tree = new Set<string>();
+    for (const edge of candidatesByDistance) if (find(edge.first) !== find(edge.second)) {
+      parent[find(edge.first)] = find(edge.second);
+      const key = edgeKey(cellKey(anchors[edge.first]), cellKey(anchors[edge.second])); tree.add(key);
+      connect(anchors[edge.first], anchors[edge.second], 'secondary');
+    }
+    for (const edge of candidatesByDistance) {
+      const key = edgeKey(cellKey(anchors[edge.first]), cellKey(anchors[edge.second]));
+      if (tree.has(key) || edge.distance > spacing * 2.3 || random() > .36) continue;
+      connect(anchors[edge.first], anchors[edge.second], 'secondary');
+    }
   }
 
   for (const entrance of site.entrances) {
@@ -128,11 +260,11 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     const start = nearestWalkable(target, Math.max(cellSize * 5, extent * .08));
     if (!start || !anchors.length) continue;
     const nearest = anchors.slice().sort((first, second) => {
-      const firstPosition = positionOf(first.cell); const secondPosition = positionOf(second.cell);
+      const firstPosition = positionOf(first); const secondPosition = positionOf(second);
       return Math.hypot(firstPosition[0] - target[0], firstPosition[1] - target[1])
         - Math.hypot(secondPosition[0] - target[0], secondPosition[1] - target[1]);
     })[0];
-    const path = route(start, nearest.cell);
+    const path = route(start, nearest);
     if (!path.length) continue;
     const gate = `g-${entrance.id}`; const first = cellKey(path[0]);
     addNode(gate, entrance.position, true); addNode(first, positionOf(path[0])); addEdge(gate, first, 'access');
@@ -146,12 +278,10 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     adjacency.get(edge.start)!.set(edge.end, edge.kind); adjacency.get(edge.end)!.set(edge.start, edge.kind);
   }
   const important = new Set<string>();
-  for (const [key, neighbors] of adjacency) {
-    if (nodes.get(key)?.preserve || neighbors.size !== 2) { important.add(key); continue; }
-    const [[first, firstKind], [second, secondKind]] = Array.from(neighbors.entries());
-    const position = nodes.get(key)!.position; const firstPoint = nodes.get(first)!.position; const secondPoint = nodes.get(second)!.position;
-    const cross = (position[0] - firstPoint[0]) * (secondPoint[1] - position[1]) - (position[1] - firstPoint[1]) * (secondPoint[0] - position[0]);
-    if (firstKind !== secondKind || Math.abs(cross) > .001) important.add(key);
+    for (const [key, neighbors] of adjacency) {
+      if (nodes.get(key)?.preserve || neighbors.size !== 2) { important.add(key); continue; }
+      const [[, firstKind], [, secondKind]] = Array.from(neighbors.entries());
+      if (firstKind !== secondKind) important.add(key);
   }
   const visited = new Set<string>(); const graphNodes = new Map<string, { id: string; position: Position }>();
   const graphEdges: StreetGraph['edges'] = [];
@@ -161,7 +291,12 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     graphNodes.set(start, { id: nodeId(start), position: nodes.get(start)!.position });
     graphNodes.set(end, { id: nodeId(end), position: nodes.get(end)!.position });
     const edgeId = `street-edge-${graphEdges.length + 1}`;
-    graphEdges.push({ id: edgeId, start: nodeId(start), end: nodeId(end), centerline: path.map(key => nodes.get(key)!.position),
+    const line = simplify(path.map(key => nodes.get(key)!.position));
+    const curve = bowed(line, site.seed + graphEdges.length * 0x9e3779b9, kind === 'primary' ? .22 : .12);
+    const entrances = kind === 'access' ? site.entrances.map(entrance => entrance.position) : [];
+    const centerline = roadFits(curve, widthByKind[kind], land, cellSize, entrances, kind === 'access')
+      && clearOfExistingRoads(curve, start, end, graphEdges) ? curve : line;
+    graphEdges.push({ id: edgeId, start: nodeId(start), end: nodeId(end), centerline,
       widthMeters: widthByKind[kind], kind });
   };
   const walk = (start: string, next: string, initialKind: RoadKind) => {
@@ -171,9 +306,6 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
       const options = Array.from(adjacency.get(current)!.entries()).filter(([key]) => key !== previous);
       if (options.length !== 1 || options[0][1] !== kind) break;
       const following = options[0][0];
-      const before = nodes.get(previous)!.position; const middle = nodes.get(current)!.position; const after = nodes.get(following)!.position;
-      const cross = (middle[0] - before[0]) * (after[1] - middle[1]) - (middle[1] - before[1]) * (after[0] - middle[0]);
-      if (Math.abs(cross) > .001) break;
       visited.add(edgeKey(current, following)); path.push(following); previous = current; current = following;
     }
     if (!important.has(current)) important.add(current);
