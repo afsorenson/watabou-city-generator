@@ -11,7 +11,33 @@ the current hosted generator. It retains the original building and street
 generation as the default, with optional Footprints and Block Rows modes, monochrome
 presentation, city-focused framing, optional city walls, a local launcher, and
 PNG export.
-Coastline constraints and background-image import are not implemented yet.
+The parallel **Site Contract** inspector now validates coastline/exclusion geometry,
+protected features, required entrances, and registered background images. These
+constraints do not alter the legacy generator yet. The new engine is at Phase 1:
+no streets or buildings are generated from its contract.
+
+### New Engine: Phase 1
+
+Choose **Site Contract** in the generator toolbar, or open
+http://127.0.0.1:8788/inspector.html. Inspect Open Land, Curved Coastline,
+Internal Exclusion, and deliberately Conflicting Constraints fixtures. Toggle
+layers, inspect reported conflicts, and register an uploaded PNG/JPEG/WebP against
+the same meter-based coordinate system. Contract JSON can be edited or imported;
+diagnostic PNG and contract/review JSON can be exported.
+
+**Approve Contract** records an explicit local visual review of the exact contract,
+engine version, and build. Tests never approve it automatically. Invalid inputs
+cannot be approved or exported as valid engine results. Keep exported JSON for
+durable contract/review storage; local browser approval is not a project save.
+
+See [Phase 1 Contract And Review](docs/new-engine-phase-1.md) for the contract,
+validation rules, limitations, review checklist, and later phases.
+
+```sh
+npm run test:contracts
+npm run build
+npm run test:inspector
+```
 
 ### Run On This Mac
 

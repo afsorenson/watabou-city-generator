@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const output = resolve(root, '.toolchain/contract-tests.mjs');
+await mkdir(resolve(root, '.toolchain'), { recursive: true });
+await build({ entryPoints: [resolve(root, 'Engine/fixtures.ts')], bundle: true, platform: 'node', format: 'esm', outfile: output });
+await build({ entryPoints: [resolve(root, 'Engine/contracts.ts')], bundle: true, platform: 'node', format: 'esm', outfile: resolve(root, '.toolchain/contract-api.mjs') });
+const { fixtures } = await import(pathToFileURL(output).href);
+const { validateSite, contractResult, canonicalJson, imageToWorld, worldToImage } = await import(pathToFileURL(resolve(root, '.toolchain/contract-api.mjs')).href);
+for (const fixture of fixtures) {
+  const site = fixture.create();
+  const report = validateSite(site);
+  assert.equal(report.valid, fixture.id !== 'conflict', `${fixture.id}: ${JSON.stringify(report.issues)}`);
+  assert.equal(canonicalJson(report), canonicalJson(validateSite(JSON.parse(JSON.stringify(site)))));
+  if (report.valid) {
+    const result = contractResult(site);
+    assert.deepEqual(result.streets, { nodes: [], edges: [] });
+    assert.equal(result.buildings.length + result.blocks.length + result.plots.length, 0, 'Phase 1 must not generate layout');
+  } else assert.throws(() => contractResult(site));
+  if (fixture.id === 'exclusion') assert.ok(report.buildable.some(part => part.length > 1), 'Internal exclusions must remain holes');
+  if (fixture.id === 'coast') assert.ok(report.metrics.waterArea > 0 && report.metrics.buildableArea < report.metrics.landArea);
+}
+const conflict = validateSite(fixtures.find(fixture => fixture.id === 'conflict').create());
+assert.ok(conflict.issues.some(issue => issue.code === 'PROTECTED_MASK_CONFLICT'));
+assert.ok(conflict.issues.some(issue => issue.code === 'ENTRANCE_BLOCKED'));
+const bowtie = fixtures[0].create();
+bowtie.land.coordinates = [[[0,0],[100,100],[0,100],[100,0],[0,0]]];
+assert.equal(validateSite(bowtie).valid, false, 'Self-intersections must be rejected');
+const invalid = fixtures[0].create(); invalid.seed = 2147483647;
+assert.equal(validateSite(invalid).valid, false);
+const crossed = fixtures[0].create();
+crossed.masks.push({id:'thin-strip', label:'Thin forbidden strip', kind:'forbidden', geometry:{type:'Polygon',coordinates:[[[2,350],[4,350],[4,450],[2,450],[2,350]]]}});
+assert.ok(validateSite(crossed).issues.some(issue => issue.code === 'ENTRANCE_CLEARANCE_BLOCKED'), 'Entrance clearance must not cross a hidden obstacle');
+const reversed = fixtures[0].create(); reversed.land.coordinates[0].reverse();
+assert.equal(validateSite(reversed).valid, true, 'Valid winding changes must not invalidate land');
+const outsideHole = fixtures[0].create();
+outsideHole.land.coordinates.push([[1100,100],[1200,100],[1200,200],[1100,200],[1100,100]]);
+assert.ok(validateSite(outsideHole).issues.some(issue => issue.code === 'HOLE_OUTSIDE_SHELL'));
+const overlappingHoles = fixtures[0].create();
+overlappingHoles.land.coordinates.push([[100,100],[300,100],[300,300],[100,300],[100,100]],[[150,150],[250,150],[250,250],[150,250],[150,150]]);
+assert.ok(validateSite(overlappingHoles).issues.some(issue => issue.code === 'OVERLAPPING_HOLES'));
+const validHole = fixtures[0].create();
+validHole.land.coordinates.push([[100,100],[300,100],[300,300],[100,300],[100,100]]);
+assert.equal(validateSite(validHole).valid, true);
+assert.equal(validateSite(validHole).metrics.landArea,760000);
+const background = { ...fixtures[0].create().background, origin: [-60, 42], metersPerPixel: 1.75, rotationDegrees: 23 };
+const original = [370, 225];
+const restored = worldToImage(imageToWorld(original, background), background);
+assert.ok(Math.hypot(restored[0] - original[0], restored[1] - original[1]) < 1e-8);
+console.log('PASS: independent contract schemas, deterministic fixtures, topology validation, exclusions/holes, conflicts, entrances, coordinate registration, and empty Phase 1 outputs');

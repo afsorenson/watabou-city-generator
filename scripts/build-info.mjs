@@ -45,7 +45,7 @@ window.saveAs = function(blob, name, options) {
         '<script src="./build-info.js"></script><script src="./legacy-build.js"></script><script src="./controls.js">'));
     }
   }
-  const paths = ['Source', 'Browser', 'Assets', 'project.xml', 'scripts/build.sh', 'scripts/build-info.mjs', 'package.json', 'package-lock.json'];
+  const paths = ['Source', 'Browser', 'Engine', 'Assets', 'project.xml', 'tsconfig.engine.json', 'scripts/build.sh', 'scripts/build-info.mjs', 'package.json', 'package-lock.json'];
   const files = git(['ls-files', '--cached', '--others', '--exclude-standard', '--', ...paths]).split('\n').filter(Boolean).sort();
   const hash = createHash('sha256');
   for (const path of files) {
@@ -68,6 +68,7 @@ window.saveAs = function(blob, name, options) {
 } else if (process.argv[2] === 'finish') {
   const info = JSON.parse(await readFile(statePath, 'utf8'));
   info.engineSha256 = digest(await readFile(join(output, 'TownGenerator.js')));
+  info.contractEngineSha256 = digest(await readFile(join(output, 'inspector.js')));
   const html = await readFile(join(output, 'index.html'), 'utf8');
   await writeFile(join(output, 'index.html'), html.replaceAll('__CITY_BUILD_ID__', info.id));
   await writeMetadata(output, info, './');

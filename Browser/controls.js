@@ -13,6 +13,7 @@ const mixInput = document.querySelector('#growth-mix');
 const mixDialog = document.querySelector('#district-dialog');
 const status = document.querySelector('#build-status');
 const appRoot = new URL(window.cityBuild?.appRoot ?? './', location.href);
+document.querySelector('#site-contract').addEventListener('click', () => { location.href = new URL('inspector.html', appRoot).href; });
 if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embedded');
 
 function showStatus(message) {

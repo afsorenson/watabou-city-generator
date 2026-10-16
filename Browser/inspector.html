@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Site Contract Inspector</title>
+  <link rel="icon" href="./favicon.png">
+  <link rel="stylesheet" href="./inspector.css">
+</head>
+<body>
+  <header class="inspector-toolbar">
+    <a id="generator-link" class="icon-link" title="Return to city generator" aria-label="Return to city generator"><img src="./icons/arrow-left.svg" alt=""></a>
+    <h1>Site Contract</h1>
+    <label>Fixture <select id="fixture" aria-label="Site fixture"></select></label>
+    <label>Seed <input id="contract-seed" type="number" min="1" max="2147483646" step="1" required></label>
+    <span class="versions">Engine <output id="engine-version"></output><br>Build <output id="inspector-build"></output></span>
+    <button id="import-contract" title="Import contract JSON" aria-label="Import contract JSON"><img src="./icons/upload.svg" alt=""><span>Import</span></button>
+    <button id="export-contract" title="Export contract and validation JSON" aria-label="Export contract JSON"><img src="./icons/file-json.svg" alt=""><span>Contract</span></button>
+    <button id="export-diagnostic" title="Export diagnostic PNG" aria-label="Export diagnostic PNG"><img src="./icons/download.svg" alt=""><span>PNG</span></button>
+    <input id="contract-file" type="file" accept="application/json,.json" hidden>
+  </header>
+  <main class="inspector-workspace">
+    <aside class="constraint-sidebar">
+      <h2>Layers</h2><div id="layers" class="layer-controls"></div>
+      <h2>Constraints</h2><div id="features" class="feature-list"></div>
+      <details class="registration" open>
+        <summary>Image Registration</summary>
+        <button id="upload-background" title="Load background image" aria-label="Load background image"><img src="./icons/image.svg" alt=""><span>Image</span></button>
+        <button id="remove-background" title="Remove background image" aria-label="Remove background image"><img src="./icons/x.svg" alt=""></button>
+        <input id="background-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <output id="image-size"></output>
+        <form id="registration-form">
+          <label>Origin X <input id="image-x" type="number" step="0.001" min="-1000000" max="1000000" required></label>
+          <label>Origin Y <input id="image-y" type="number" step="0.001" min="-1000000" max="1000000" required></label>
+          <label>Meters / pixel <input id="image-scale" type="number" step="0.001" min="0.001" max="10000" required></label>
+          <label>Rotation <input id="image-rotation" type="number" step="0.1" min="-180" max="180" required></label>
+          <label>Opacity <input id="image-opacity" type="range" min="0" max="1" step="0.05"></label>
+          <button id="apply-registration" type="submit" title="Apply image registration" aria-label="Apply image registration"><img src="./icons/check.svg" alt=""><span>Apply</span></button>
+        </form>
+      </details>
+    </aside>
+    <section class="map-surface" aria-label="Constraint map">
+      <div class="map-tools"><button id="zoom-in" title="Zoom in" aria-label="Zoom in"><img src="./icons/zoom-in.svg" alt=""></button><button id="zoom-out" title="Zoom out" aria-label="Zoom out"><img src="./icons/zoom-out.svg" alt=""></button><button id="fit-site" title="Fit site" aria-label="Fit site"><img src="./icons/maximize.svg" alt=""></button></div>
+      <canvas id="contract-map" aria-label="Site boundary, masks, protected features and entrances"></canvas>
+      <output id="coordinate-readout" class="coordinate-readout">Meters | +X right | +Y down</output>
+    </section>
+    <aside class="validation-sidebar">
+      <h2>Contract Validation</h2>
+      <output id="validation-status" class="validation-status" role="status"></output>
+      <dl id="contract-metrics"></dl>
+      <div id="issues" class="issues"></div>
+      <h2>Visual Review</h2>
+      <output id="review-state" class="review-state"></output>
+      <button id="approve-contract" title="Approve this contract after visual review" aria-label="Approve contract" disabled><img src="./icons/check.svg" alt=""><span>Approve Contract</span></button>
+      <button id="revoke-review" title="Revoke local approval" aria-label="Revoke local approval" disabled><img src="./icons/x.svg" alt=""><span>Revoke</span></button>
+      <output id="contract-fingerprint" class="fingerprint"></output>
+      <details><summary>Contract JSON</summary><textarea id="contract-json" aria-label="Contract JSON" spellcheck="false"></textarea><button id="apply-json" title="Apply contract JSON" aria-label="Apply contract JSON"><img src="./icons/check.svg" alt=""><span>Apply JSON</span></button></details>
+    </aside>
+  </main>
+  <output id="inspector-message" class="inspector-message" role="status" hidden></output>
+  <script src="./build-info.js"></script>
+  <script src="./inspector.js" type="module"></script>
+</body>
+</html>
