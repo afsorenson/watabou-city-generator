@@ -33,6 +33,11 @@ function verifyGraph(site, result) {
   const directions = new Set();
   const validation = validateSite(site);
   const land = validation.buildable.map(coordinates => ({ type: 'Polygon', coordinates }));
+  const streetLength = streets.edges.reduce((total, edge) => total + edge.centerline.slice(1).reduce((length, point, index) => {
+    const previous = edge.centerline[index]; return length + Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+  }, 0), 0);
+  assert.ok(streetLength / validation.metrics.buildableArea < .018,
+    `Street length density is too high: ${streetLength / validation.metrics.buildableArea}`);
   for (const edge of streets.edges) {
     assert.ok(nodeById.has(edge.start) && nodeById.has(edge.end), `Missing graph node for ${edge.id}`);
     assert.deepEqual(edge.centerline[0], nodeById.get(edge.start).position);

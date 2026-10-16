@@ -25,20 +25,30 @@ eight-direction movement without corner cutting; a greedy line-of-sight simplifi
 removes cell-scale turns only when every rasterized grid point remains walkable.
 
 Candidate junctions are sampled deterministically from walkable cells with a
-minimum spacing, producing a blue-noise-like distribution rather than rows and
-columns. Delaunay edges form a local neighbor graph. A minimum-spanning backbone
-connects the sampled points, while selected short Delaunay edges add side-street
-loops. A small set of more widely spaced hubs is linked by primary routes (14 m);
-the mesh is secondary streets (9 m), and required boundary entrances get 7 m access
-streets. Current spacings and road counts are internal defaults, not user controls.
+minimum spacing of 12% of the site extent and a cap of 72 points, producing a
+blue-noise-like distribution rather than rows and columns. Delaunay edges form a
+local neighbor graph. A minimum-spanning backbone connects sampled points, while
+a small random subset of short Delaunay edges adds side-street loops. A small set
+of more widely spaced hubs is linked by primary routes (14 m); the mesh is
+secondary streets (9 m), and required boundary entrances get 7 m access streets.
+The hub links participate in the same connectivity structure as the local mesh.
+Candidate side routes are rejected when most of their corridor already follows an
+existing road. Defaults are internal, not user controls.
 
 Centerlines preserve junction endpoints and smooth the route between them.
 Multi-bend paths use corner rounding. Long direct connectors use seeded cubic
 Bézier-like bows. Each candidate curve is sampled across its full street width
-against buildable land, and against existing centerlines to avoid unconnected
-crossings; curves that fail those checks fall back to the terrain-safe route.
-Crossings in the graph itself remain shared junction nodes. Roads are therefore
-not allowed to visually jump over a barrier or form an unrepresented intersection.
+against buildable land and checked in a local grid occupancy map before acceptance;
+curves that fail those checks fall back to the terrain-safe route. Crossings in the
+graph itself remain shared junction nodes. Clearance-grid connected components are
+computed before routing, so impossible cross-barrier routes are skipped instead
+of repeatedly attempting A* across unreachable land.
+
+The network density regression caps total centerline length at 1.8% of buildable
+area on the open, coast, and exclusion fixtures. Current default-seed examples
+range from 0.011 to 0.014. Against the prior version's roughly 0.025 to 0.028, the
+centerline length is about half while each fixture remains connected. This is a
+test limit for these fixtures, not a universal city-planning optimum.
 
 The output still does not have the user's desired final urban character. It is an
 irregular procedural street mesh with a visibly dominant hub/radial structure and
@@ -91,7 +101,8 @@ label. Neither artifact contains blocks or buildings at this phase.
 The automated Phase 2 gate verifies deterministic output, non-grid bearings,
 curved multi-point centerlines including primary routes, side-street density,
 branch junctions, graph connectivity, entrance attachment, seed variation,
-centerline and sampled width clearance, disconnected-region reporting,
+centerline and sampled width clearance, a per-area density ceiling,
+disconnected-region reporting,
 desktop/mobile open/coast/exclusion rendering, layer toggling, and JSON export.
 Passing tests does not substitute for the urban-composition visual review.
 

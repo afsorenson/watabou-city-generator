@@ -1,7 +1,6 @@
 import PathFinding from 'pathfinding';
 import { Delaunay } from 'd3-delaunay';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
-import lineIntersect from '@turf/line-intersect';
 import { contractResult, validateSite, type EngineResult, type Issue, type Land, type Position, type SiteContract, type StreetGraph } from './contracts';
 
 type Cell = { x: number; y: number };
@@ -74,24 +73,6 @@ function bowed(points: Position[], seed: number, strength: number): Position[] {
   });
 }
 
-function clearOfExistingRoads(points: Position[], start: string, end: string, roads: StreetGraph['edges']) {
-  const candidate = { type: 'LineString' as const, coordinates: points };
-  for (const road of roads) {
-    const sharedEndpoints: [Position, Position][] = [];
-    if (road.start === nodeId(start)) sharedEndpoints.push([points[0], road.centerline[0]]);
-    if (road.end === nodeId(start)) sharedEndpoints.push([points[0], road.centerline[road.centerline.length - 1]]);
-    if (road.start === nodeId(end)) sharedEndpoints.push([points[points.length - 1], road.centerline[0]]);
-    if (road.end === nodeId(end)) sharedEndpoints.push([points[points.length - 1], road.centerline[road.centerline.length - 1]]);
-    const intersections = lineIntersect(candidate, { type: 'LineString', coordinates: road.centerline }).features;
-    for (const intersection of intersections) {
-      const [x, y] = intersection.geometry.coordinates;
-      if (!sharedEndpoints.some(([first, second]) => Math.hypot(x - first[0], y - first[1]) < .001
-        && Math.hypot(x - second[0], y - second[1]) < .001)) return false;
-    }
-  }
-  return true;
-}
-
 function roadFits(points: Position[], width: number, land: Land, cellSize: number, entrances: Position[], allowGate = false) {
   const directions = Array.from({ length: 16 }, (_value, index) => index * Math.PI / 8);
   for (let index = 1; index < points.length; index += 1) {
@@ -135,9 +116,27 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     return probes.every(angle => pointIn(land, [center[0] + Math.cos(angle) * clearance, center[1] + Math.sin(angle) * clearance])) ? 0 : 1;
   }));
   const grid = new PathFinding.Grid(matrix);
+  const regionIds = Array.from({ length: gridWidth * gridHeight }, () => -1);
+  const regionAt = (cell: Cell) => regionIds[cell.y * gridWidth + cell.x];
+  let regionCount = 0;
+  for (let y = 0; y < gridHeight; y += 1) for (let x = 0; x < gridWidth; x += 1) {
+    const index = y * gridWidth + x;
+    if (!grid.isWalkableAt(x, y) || regionIds[index] >= 0) continue;
+    const pending = [grid.getNodeAt(x, y)]; regionIds[index] = regionCount;
+    for (let cursor = 0; cursor < pending.length; cursor += 1) {
+      const current = pending[cursor];
+      for (const neighbor of grid.getNeighbors(current, PathFinding.DiagonalMovement.OnlyWhenNoObstacles)) {
+        const neighborIndex = neighbor.y * gridWidth + neighbor.x;
+        if (regionIds[neighborIndex] >= 0) continue;
+        regionIds[neighborIndex] = regionCount; pending.push(neighbor);
+      }
+    }
+    regionCount += 1;
+  }
   const random = randomFor(site.seed);
   const nodes = new Map<string, RawNode>();
   const edges = new Map<string, RawEdge>();
+  const roadCells = new Set<string>();
   const addNode = (key: string, position: Position, preserve = false) => {
     const existing = nodes.get(key);
     if (existing) existing.preserve ||= preserve;
@@ -165,6 +164,7 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     return closest;
   };
   const route = (start: Cell, end: Cell): Cell[] => {
+    if (regionAt(start) !== regionAt(end)) return [];
     const path = new PathFinding.AStarFinder({ diagonalMovement: PathFinding.DiagonalMovement.OnlyWhenNoObstacles,
       heuristic: PathFinding.Heuristic.octile }).findPath(start.x, start.y, end.x, end.y, grid.clone());
     if (path.length < 3) return path.map(([x, y]) => ({ x, y }));
@@ -184,6 +184,53 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     for (let index = 1; index < path.length; index += 1) {
       const first = cellKey(path[index - 1]); const second = cellKey(path[index]);
       addNode(first, positionOf(path[index - 1])); addNode(second, positionOf(path[index])); addEdge(first, second, kind);
+      roadCells.add(first); roadCells.add(second);
+    }
+  };
+  const overlapRatio = (path: Cell[]) => {
+    const interior = path.slice(3, -3);
+    if (interior.length < 4 || !roadCells.size) return 0;
+    let nearby = 0;
+    for (const cell of interior) {
+      let found = false;
+      for (let y = -2; y <= 2 && !found; y += 1) for (let x = -2; x <= 2; x += 1) {
+        if (roadCells.has(cellKey({ x: cell.x + x, y: cell.y + y }))) { found = true; break; }
+      }
+      if (found) nearby += 1;
+    }
+    return nearby / interior.length;
+  };
+  const renderedRoadCells = new Set<string>();
+  const curveClear = (path: Position[]) => {
+    for (let index = 1; index < path.length; index += 1) {
+      const first = path[index - 1]; const second = path[index];
+      const length = Math.hypot(second[0] - first[0], second[1] - first[1]);
+      const samples = Math.max(1, Math.ceil(length / (cellSize * .5)));
+      for (let sample = 0; sample <= samples; sample += 1) {
+        const fraction = sample / samples;
+        const x = first[0] + (second[0] - first[0]) * fraction;
+        const y = first[1] + (second[1] - first[1]) * fraction;
+        if (Math.hypot(x - path[0][0], y - path[0][1]) < cellSize * 2
+          || Math.hypot(x - path[path.length - 1][0], y - path[path.length - 1][1]) < cellSize * 2) continue;
+        const cellX = Math.round((x - origin[0]) / cellSize - .5);
+        const cellY = Math.round((y - origin[1]) / cellSize - .5);
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) for (let offsetX = -1; offsetX <= 1; offsetX += 1)
+          if (renderedRoadCells.has(cellKey({ x: cellX + offsetX, y: cellY + offsetY }))) return false;
+      }
+    }
+    return true;
+  };
+  const rememberRoad = (path: Position[]) => {
+    for (let index = 1; index < path.length; index += 1) {
+      const first = path[index - 1]; const second = path[index];
+      const length = Math.hypot(second[0] - first[0], second[1] - first[1]);
+      const samples = Math.max(1, Math.ceil(length / (cellSize * .5)));
+      for (let sample = 0; sample <= samples; sample += 1) {
+        const fraction = sample / samples;
+        const x = first[0] + (second[0] - first[0]) * fraction;
+        const y = first[1] + (second[1] - first[1]) * fraction;
+        renderedRoadCells.add(cellKey({ x: Math.round((x - origin[0]) / cellSize - .5), y: Math.round((y - origin[1]) / cellSize - .5) }));
+      }
     }
   };
 
@@ -193,16 +240,27 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     const swap = Math.floor(random() * (index + 1)); [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
   }
   const anchors: Cell[] = [];
-  const spacing = Math.max(cellSize * 8, extent * .075);
+  const spacing = Math.max(cellSize * 12, extent * .12);
   for (const candidate of candidates) {
     const position = positionOf(candidate);
     if (anchors.every(anchor => Math.hypot(positionOf(anchor)[0] - position[0], positionOf(anchor)[1] - position[1]) >= spacing)) anchors.push(candidate);
-    if (anchors.length >= 110) break;
+    if (anchors.length >= 72) break;
   }
-  const connect = (first: Cell, second: Cell, kind: RoadKind) => {
+  const connect = (first: Cell, second: Cell, kind: RoadKind, overlapLimit = 1) => {
+    if (regionAt(first) !== regionAt(second)) return false;
     const path = route(first, second);
     if (!path.length) return false;
+    if (overlapRatio(path) > overlapLimit) return false;
     addRoute(path, kind); return true;
+  };
+  const anchorIndex = new Map(anchors.map((anchor, index) => [cellKey(anchor), index]));
+  const parent = anchors.map((_anchor, index) => index);
+  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
+  const join = (first: Cell, second: Cell) => {
+    const firstIndex = anchorIndex.get(cellKey(first)); const secondIndex = anchorIndex.get(cellKey(second));
+    if (firstIndex === undefined || secondIndex === undefined) return;
+    const firstRoot = find(firstIndex); const secondRoot = find(secondIndex);
+    if (firstRoot !== secondRoot) parent[firstRoot] = secondRoot;
   };
   const center: Position = [(minX + maxX) / 2, (minY + maxY) / 2];
   const hubs: Cell[] = [];
@@ -211,13 +269,14 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
   if (firstHub) hubs.push(firstHub);
   const hubCount = Math.min(5, Math.max(2, Math.round(Math.sqrt(anchors.length) * .55)), anchors.length);
   while (hubs.length < hubCount) {
-    const next = anchors.filter(candidate => !hubs.some(hub => hub.x === candidate.x && hub.y === candidate.y))
+    const next = anchors.filter(candidate => regionAt(candidate) === regionAt(hubs[0])
+      && !hubs.some(hub => hub.x === candidate.x && hub.y === candidate.y))
       .sort((first, second) => Math.min(...hubs.map(hub => Math.hypot(positionOf(first)[0] - positionOf(hub)[0], positionOf(first)[1] - positionOf(hub)[1])))
         - Math.min(...hubs.map(hub => Math.hypot(positionOf(second)[0] - positionOf(hub)[0], positionOf(second)[1] - positionOf(hub)[1])))).pop();
     if (!next) break;
     const nearest = hubs.slice().sort((first, second) => Math.hypot(positionOf(first)[0] - positionOf(next)[0], positionOf(first)[1] - positionOf(next)[1])
       - Math.hypot(positionOf(second)[0] - positionOf(next)[0], positionOf(second)[1] - positionOf(next)[1]))[0];
-    connect(nearest, next, 'primary'); hubs.push(next);
+    if (connect(nearest, next, 'primary')) { join(nearest, next); hubs.push(next); }
   }
 
   if (anchors.length > 1) {
@@ -225,7 +284,7 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     const delaunay = Delaunay.from(coordinates, point => point[0], point => point[1]);
     const candidateEdges = new Map<string, { first: number; second: number; distance: number }>();
     const addCandidate = (first: number, second: number) => {
-      if (first === second) return;
+      if (first === second || regionAt(anchors[first]) !== regionAt(anchors[second])) return;
       const key = first < second ? `${first}:${second}` : `${second}:${first}`;
       if (candidateEdges.has(key)) return;
       const a = coordinates[first]; const b = coordinates[second];
@@ -238,18 +297,16 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     if (!candidateEdges.size) for (let first = 0; first < anchors.length; first += 1)
       for (let second = first + 1; second < anchors.length; second += 1) addCandidate(first, second);
     const candidatesByDistance = Array.from(candidateEdges.values()).sort((first, second) => first.distance - second.distance);
-    const parent = anchors.map((_anchor, index) => index);
-    const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
     const tree = new Set<string>();
     for (const edge of candidatesByDistance) if (find(edge.first) !== find(edge.second)) {
-      parent[find(edge.first)] = find(edge.second);
+      if (!connect(anchors[edge.first], anchors[edge.second], 'secondary', .58)) continue;
+      join(anchors[edge.first], anchors[edge.second]);
       const key = edgeKey(cellKey(anchors[edge.first]), cellKey(anchors[edge.second])); tree.add(key);
-      connect(anchors[edge.first], anchors[edge.second], 'secondary');
     }
     for (const edge of candidatesByDistance) {
       const key = edgeKey(cellKey(anchors[edge.first]), cellKey(anchors[edge.second]));
-      if (tree.has(key) || edge.distance > spacing * 2.3 || random() > .36) continue;
-      connect(anchors[edge.first], anchors[edge.second], 'secondary');
+      if (tree.has(key) || edge.distance > spacing * 1.9 || random() > .18) continue;
+      connect(anchors[edge.first], anchors[edge.second], 'secondary', .2);
     }
   }
 
@@ -259,11 +316,13 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
       entrance.position[1] + Math.sin(angle) * Math.max(entrance.clearanceMeters, cellSize * 1.5)];
     const start = nearestWalkable(target, Math.max(cellSize * 5, extent * .08));
     if (!start || !anchors.length) continue;
-    const nearest = anchors.slice().sort((first, second) => {
+    const reachableAnchors = anchors.filter(anchor => regionAt(anchor) === regionAt(start));
+    const nearest = reachableAnchors.slice().sort((first, second) => {
       const firstPosition = positionOf(first); const secondPosition = positionOf(second);
       return Math.hypot(firstPosition[0] - target[0], firstPosition[1] - target[1])
         - Math.hypot(secondPosition[0] - target[0], secondPosition[1] - target[1]);
     })[0];
+    if (!nearest) continue;
     const path = route(start, nearest);
     if (!path.length) continue;
     const gate = `g-${entrance.id}`; const first = cellKey(path[0]);
@@ -294,8 +353,8 @@ export function generateStreetNetwork(site: SiteContract): EngineResult {
     const line = simplify(path.map(key => nodes.get(key)!.position));
     const curve = bowed(line, site.seed + graphEdges.length * 0x9e3779b9, kind === 'primary' ? .22 : .12);
     const entrances = kind === 'access' ? site.entrances.map(entrance => entrance.position) : [];
-    const centerline = roadFits(curve, widthByKind[kind], land, cellSize, entrances, kind === 'access')
-      && clearOfExistingRoads(curve, start, end, graphEdges) ? curve : line;
+    const centerline = roadFits(curve, widthByKind[kind], land, cellSize, entrances, kind === 'access') && curveClear(curve) ? curve : line;
+    rememberRoad(centerline);
     graphEdges.push({ id: edgeId, start: nodeId(start), end: nodeId(end), centerline,
       widthMeters: widthByKind[kind], kind });
   };
