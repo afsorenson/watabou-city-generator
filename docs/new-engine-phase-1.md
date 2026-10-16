@@ -155,8 +155,9 @@ approval persistence/invalidation, JSON/PNG exports, and archived navigation.
 Screenshots are written to ignored `test-results/`. Build runs TypeScript checking.
 The legacy identity smoke check covers the existing seed/share/compare/export path.
 
-Passing these checks means the implementation is ready for human review, not that
-the visual gate has been accepted. After explicit acceptance, the planned phases
-are connected streets, derived blocks, frontage/access plots, then building
-footprints and renderer/export integration. Deferred legacy performance work and
-legacy generation bugs are not part of this phase.
+Passing these checks means Phase 1 is ready for human review, not that its visual
+gate has been accepted. Phase 2's independent connected street network is now
+implemented; see [Phase 2 Street Network](new-engine-phase-2.md). Remaining phases
+are derived blocks, frontage/access plots, then building footprints and
+renderer/export integration. Deferred legacy performance work and legacy
+generation bugs are not part of these phases.

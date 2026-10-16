@@ -10,12 +10,12 @@
 <body>
   <header class="inspector-toolbar">
     <a id="generator-link" class="icon-link" title="Return to city generator" aria-label="Return to city generator"><img src="./icons/arrow-left.svg" alt=""></a>
-    <h1>Site Contract</h1>
+    <h1>Site &amp; Streets</h1>
     <label>Fixture <select id="fixture" aria-label="Site fixture"></select></label>
     <label>Seed <input id="contract-seed" type="number" min="1" max="2147483646" step="1" required></label>
     <span class="versions">Engine <output id="engine-version"></output><br>Build <output id="inspector-build"></output></span>
     <button id="import-contract" title="Import contract JSON" aria-label="Import contract JSON"><img src="./icons/upload.svg" alt=""><span>Import</span></button>
-    <button id="export-contract" title="Export contract and validation JSON" aria-label="Export contract JSON"><img src="./icons/file-json.svg" alt=""><span>Contract</span></button>
+    <button id="export-contract" title="Export site contract, street graph, and validation JSON" aria-label="Export contract and streets JSON"><img src="./icons/file-json.svg" alt=""><span>JSON</span></button>
     <button id="export-diagnostic" title="Export diagnostic PNG" aria-label="Export diagnostic PNG"><img src="./icons/download.svg" alt=""><span>PNG</span></button>
     <input id="contract-file" type="file" accept="application/json,.json" hidden>
   </header>
@@ -39,9 +39,10 @@
         </form>
       </details>
     </aside>
-    <section class="map-surface" aria-label="Constraint map">
-      <div class="map-tools"><button id="zoom-in" title="Zoom in" aria-label="Zoom in"><img src="./icons/zoom-in.svg" alt=""></button><button id="zoom-out" title="Zoom out" aria-label="Zoom out"><img src="./icons/zoom-out.svg" alt=""></button><button id="fit-site" title="Fit site" aria-label="Fit site"><img src="./icons/maximize.svg" alt=""></button></div>
-      <canvas id="contract-map" aria-label="Site boundary, masks, protected features and entrances"></canvas>
+    <section class="map-surface" aria-label="Site constraints and street network">
+      <div class="map-tools"><button id="generate-streets" title="Generate connected street network" aria-label="Generate street network"><img src="./icons/route.svg" alt=""><span>Streets</span></button><button id="zoom-in" title="Zoom in" aria-label="Zoom in"><img src="./icons/zoom-in.svg" alt=""></button><button id="zoom-out" title="Zoom out" aria-label="Zoom out"><img src="./icons/zoom-out.svg" alt=""></button><button id="fit-site" title="Fit site" aria-label="Fit site"><img src="./icons/maximize.svg" alt=""></button></div>
+      <output id="street-status" class="street-status" role="status">No street network generated</output>
+      <canvas id="contract-map" aria-label="Site constraints, required entrances and generated streets"></canvas>
       <output id="coordinate-readout" class="coordinate-readout">Meters | +X right | +Y down</output>
     </section>
     <aside class="validation-sidebar">

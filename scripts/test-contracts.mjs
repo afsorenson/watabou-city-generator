@@ -18,7 +18,7 @@ for (const fixture of fixtures) {
   assert.equal(canonicalJson(report), canonicalJson(validateSite(JSON.parse(JSON.stringify(site)))));
   if (report.valid) {
     const result = contractResult(site);
-    assert.deepEqual(result.streets, { nodes: [], edges: [] });
+    assert.deepEqual(result.streets, { connected: false, components: 0, nodes: [], edges: [] });
     assert.equal(result.buildings.length + result.blocks.length + result.plots.length, 0, 'Phase 1 must not generate layout');
   } else assert.throws(() => contractResult(site));
   if (fixture.id === 'exclusion') assert.ok(report.buildable.some(part => part.length > 1), 'Internal exclusions must remain holes');

@@ -13,7 +13,7 @@ cp Browser/index.html Browser/controls.css Browser/controls.js Browser/compare.h
 cp Browser/inspector.html Browser/inspector.css Export/html5/bin/
 ./node_modules/.bin/esbuild Browser/inspector.ts --bundle --format=esm --outfile=Export/html5/bin/inspector.js
 mkdir -p Export/html5/bin/icons
-for icon in upload file-json image zoom-in zoom-out maximize map; do
+for icon in upload file-json image zoom-in zoom-out maximize map route; do
     cp "node_modules/lucide-static/icons/$icon.svg" Export/html5/bin/icons/
 done
 cp node_modules/lucide-static/icons/refresh-cw.svg node_modules/lucide-static/icons/download.svg Export/html5/bin/icons/

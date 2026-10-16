@@ -11,30 +11,34 @@ the current hosted generator. It retains the original building and street
 generation as the default, with optional Footprints and Block Rows modes, monochrome
 presentation, city-focused framing, optional city walls, a local launcher, and
 PNG export.
-The parallel **Site Contract** inspector now validates coastline/exclusion geometry,
-protected features, required entrances, and registered background images. These
-constraints do not alter the legacy generator yet. The new engine is at Phase 1:
-no streets or buildings are generated from its contract.
+The parallel **Site & Streets** inspector validates coastline/exclusion geometry,
+protected features, required entrances, and registered background images, then
+generates an independent connected street network inside buildable land. It does
+not alter the legacy generator. Blocks, plots, and buildings are not generated yet.
 
-### New Engine: Phase 1
+### New Engine: Phases 1 And 2
 
 Choose **Site Contract** in the generator toolbar, or open
 http://127.0.0.1:8788/inspector.html. Inspect Open Land, Curved Coastline,
 Internal Exclusion, and deliberately Conflicting Constraints fixtures. Toggle
 layers, inspect reported conflicts, and register an uploaded PNG/JPEG/WebP against
 the same meter-based coordinate system. Contract JSON can be edited or imported;
-diagnostic PNG and contract/review JSON can be exported.
+choose **Streets** to generate the seeded, clearance-aware network, inspect its
+connectivity, and export the street graph in JSON or the diagnostic map as PNG.
+No blocks, plots, or buildings are generated.
 
 **Approve Contract** records an explicit local visual review of the exact contract,
 engine version, and build. Tests never approve it automatically. Invalid inputs
 cannot be approved or exported as valid engine results. Keep exported JSON for
 durable contract/review storage; local browser approval is not a project save.
 
-See [Phase 1 Contract And Review](docs/new-engine-phase-1.md) for the contract,
-validation rules, limitations, review checklist, and later phases.
+See [Phase 1 Contract And Review](docs/new-engine-phase-1.md) and
+[Phase 2 Street Network](docs/new-engine-phase-2.md) for validation rules,
+network behavior, limitations, and review checklists.
 
 ```sh
 npm run test:contracts
+npm run test:streets
 npm run build
 npm run test:inspector
 ```

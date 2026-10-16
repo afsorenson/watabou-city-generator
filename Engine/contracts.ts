@@ -7,7 +7,7 @@ import booleanPointOnLine from '@turf/boolean-point-on-line';
 import lineIntersect from '@turf/line-intersect';
 
 export const ENGINE_ID = 'frontage-city-engine';
-export const ENGINE_VERSION = '0.1.0';
+export const ENGINE_VERSION = '0.2.0';
 export const CONTRACT_VERSION = 1;
 export type Position = [number, number];
 export type Polygon = { type: 'Polygon'; coordinates: Position[][] };
@@ -45,14 +45,14 @@ export type Issue = { severity: 'error' | 'warning'; code: string; entityId: str
 export type Validation = { valid: boolean; issues: Issue[]; buildable: Land; metrics: {
   landArea: number; waterArea: number; forbiddenArea: number; protectedArea: number; buildableArea: number; regions: number;
 } };
-export type StreetGraph = { nodes: { id: string; position: Position }[]; edges: {
+export type StreetGraph = { connected: boolean; components: number; nodes: { id: string; position: Position }[]; edges: {
   id: string; start: string; end: string; centerline: Position[]; widthMeters: number; kind: 'primary' | 'secondary' | 'access';
 }[] };
 export type StreetBlock = { id: string; geometry: Polygon; streetIds: string[] };
 export type FrontagePlot = { id: string; blockId: string; geometry: Polygon; streetId: string; frontage: Position[] };
 export type BuildingFootprint = { id: string; plotId: string; geometry: Polygon };
-export type EngineResult = { engineId: typeof ENGINE_ID; engineVersion: typeof ENGINE_VERSION; phase: 'contract'; seed: number;
-  buildable: Land; streets: StreetGraph; blocks: StreetBlock[]; plots: FrontagePlot[]; buildings: BuildingFootprint[] };
+export type EngineResult = { engineId: typeof ENGINE_ID; engineVersion: typeof ENGINE_VERSION; phase: 'contract' | 'streets'; seed: number;
+  buildable: Land; streets: StreetGraph; blocks: StreetBlock[]; plots: FrontagePlot[]; buildings: BuildingFootprint[]; issues: Issue[] };
 
 export const asLand = (shape: Polygon): Land => [shape.coordinates];
 export function ringArea(ring: number[][]): number {
@@ -161,7 +161,7 @@ export function contractResult(site: SiteContract): EngineResult {
   const validation = validateSite(site);
   if (!validation.valid) throw new Error('Invalid contract cannot become engine input.');
   return { engineId: ENGINE_ID, engineVersion: ENGINE_VERSION, phase: 'contract', seed: site.seed,
-    buildable: validation.buildable, streets: {nodes: [], edges: []}, blocks: [], plots: [], buildings: [] };
+    buildable: validation.buildable, streets: {connected: false, components: 0, nodes: [], edges: []}, blocks: [], plots: [], buildings: [], issues: [] };
 }
 
 export function imageToWorld(point: Position, background: NonNullable<SiteContract['background']>): Position {

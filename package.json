@@ -17,9 +17,11 @@
     "test:mix": "node scripts/smoke-test.mjs --mix-only",
     "check:engine": "tsc -p tsconfig.engine.json",
     "test:contracts": "npm run check:engine && node scripts/test-contracts.mjs",
+    "test:streets": "npm run check:engine && node scripts/test-streets.mjs",
     "test:inspector": "node scripts/test-inspector.mjs"
   },
   "devDependencies": {
+    "@types/pathfinding": "0.1.0",
     "esbuild": "0.25.12",
     "lucide-static": "0.468.0",
     "playwright": "1.56.1",
@@ -32,6 +34,7 @@
     "@turf/boolean-valid": "7.2.0",
     "@turf/kinks": "7.2.0",
     "@turf/line-intersect": "7.2.0",
+    "pathfinding": "0.4.18",
     "polygon-clipping": "0.15.7",
     "polylabel": "2.0.1",
     "zod": "4.1.12"

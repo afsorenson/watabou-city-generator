@@ -1,6 +1,7 @@
 import { CONTRACT_VERSION, ENGINE_ID, ENGINE_VERSION, canonicalJson, contractResult, imageToWorld, siteSchema, validateSite, worldToImage,
   type Position, type Polygon, type SiteContract, type Validation } from '../Engine/contracts';
 import { fixtures } from '../Engine/fixtures';
+import { generateStreetNetwork } from '../Engine/streets';
 
 declare global {
   interface Window { cityBuild?: { id: string; appRoot: string }; contractInspector?: { getState: () => unknown }; }
@@ -23,19 +24,20 @@ let assetError = '';
 let pending = false;
 let fingerprint = '';
 let approval: Approval | null = null;
+let streetResult: ReturnType<typeof generateStreetNetwork> | null = null;
 let revision = 0;
 let selected = 'land';
 let frame = { left: -50, top: -50, width: 1100, height: 900 };
 let pointer: { x: number; y: number; left: number; top: number; moved: boolean } | null = null;
-const layers = { background: true, grid: true, buildable: true, land: true, water: true, forbidden: true, protected: true, entrances: true, registration: true };
+const layers = { background: true, grid: true, buildable: true, land: true, water: true, forbidden: true, protected: true, entrances: true, streets: true, registration: true };
 const colors: Record<keyof typeof layers, string> = { background: '#d6dbd5', grid: '#bac4bb', buildable: '#cce2cb', land: '#2c664a',
-  water: '#6eafc1', forbidden: '#d37a72', protected: '#c5a34e', entrances: '#304e75', registration: '#757d9e' };
+  water: '#6eafc1', forbidden: '#d37a72', protected: '#c5a34e', entrances: '#304e75', streets: '#364d59', registration: '#757d9e' };
 
 function message(text: string) { const output = element<HTMLOutputElement>('#inspector-message'); output.textContent = text; output.hidden = !text; }
 function approvalKey() { return `city-contract-review:${ENGINE_VERSION}:${buildId}:${fingerprint}`; }
-function currentResult() { return site && validation.valid && !pending ? contractResult(site) : null; }
+function currentResult() { return site && validation.valid && !pending ? streetResult ?? contractResult(site) : null; }
 window.contractInspector = { getState: () => ({ contract: structuredClone(draft), validation: structuredClone(validation),
-  fingerprint, approval, ready: !pending, engineId: ENGINE_ID, engineVersion: ENGINE_VERSION, phase: 'contract', result: currentResult() }) };
+  fingerprint, approval, ready: !pending, engineId: ENGINE_ID, engineVersion: ENGINE_VERSION, phase: streetResult?.phase ?? 'contract', result: currentResult() }) };
 
 function polygonPath(target: CanvasRenderingContext2D, polygon: Polygon) {
   target.beginPath();
@@ -95,6 +97,13 @@ function paint(target: CanvasRenderingContext2D, width: number, height: number, 
       target.beginPath();target.moveTo(...end);target.lineTo(end[0]-Math.cos(angle-.55)*7/view.scale,end[1]-Math.sin(angle-.55)*7/view.scale);
       target.lineTo(end[0]-Math.cos(angle+.55)*7/view.scale,end[1]-Math.sin(angle+.55)*7/view.scale);target.closePath();target.fill();
     }
+    if(streetResult&&layers.streets) for(const edge of streetResult.streets.edges){
+      const path=edge.centerline;if(path.length<2)continue;
+      target.lineCap='round';target.lineJoin='round';target.beginPath();target.moveTo(...path[0]);for(const point of path.slice(1))target.lineTo(...point);
+      target.strokeStyle='#fffdf4';target.lineWidth=(edge.widthMeters+2.5)/view.scale;target.stroke();
+      target.strokeStyle=edge.kind==='primary'?'#334d5c':edge.kind==='secondary'?'#a25d3a':'#3f765b';
+      target.lineWidth=edge.widthMeters/view.scale;target.stroke();
+    }
     if(site.background&&layers.registration){
       const corners:Position[]=[[0,0],[site.background.pixelWidth,0],[site.background.pixelWidth,site.background.pixelHeight],[0,site.background.pixelHeight],[0,0]];
       target.strokeStyle=colors.registration;target.lineWidth=1/view.scale;target.setLineDash([6/view.scale,4/view.scale]);target.beginPath();
@@ -111,7 +120,7 @@ function paint(target: CanvasRenderingContext2D, width: number, height: number, 
   const raw=90/view.scale;const power=10**Math.floor(Math.log10(raw));const bar=[1,2,5,10].map(value=>value*power).find(value=>value>=raw)!;
   target.strokeStyle='#526259';target.lineWidth=2;target.beginPath();target.moveTo(16,height-24);target.lineTo(16+bar*view.scale,height-24);target.stroke();target.fillText(`${bar} m`,16,height-31);
   if(exported){target.fillStyle='#ffffffed';target.fillRect(0,0,width,54);target.fillStyle='#203a2c';target.font='16px "Avenir Next", sans-serif';
-    target.fillText(`${site?.name??'Invalid Contract'} | ${validation.valid?'VALIDATED':'INVALID'} | Contract phase only`,16,23);
+    target.fillText(`${site?.name??'Invalid Contract'} | ${validation.valid?'VALIDATED':'INVALID'} | ${streetResult?'Street network phase':'Contract phase only'}`,16,23);
     target.font='10px Menlo, monospace';target.fillText(`Engine ${ENGINE_VERSION} | Build ${buildId} | Seed ${site?.seed??'-'} | ${fingerprint.slice(0,16)}`,16,43);}
 }
 function redraw(){const ratio=Math.min(devicePixelRatio||1,2);const width=canvas.clientWidth,height=canvas.clientHeight;if(!width||!height)return;
@@ -147,6 +156,12 @@ function refreshPanels(){
   element<HTMLOutputElement>('#review-state').textContent=approval?`Approved locally · ${new Date(approval.reviewedAt).toLocaleString()}`:'Pending visual review';
   element<HTMLButtonElement>('#approve-contract').disabled=!valid||Boolean(approval);
   element<HTMLButtonElement>('#revoke-review').disabled=!approval;
+  const streetStatus=element<HTMLOutputElement>('#street-status');
+  streetStatus.textContent=streetResult?(streetResult.streets.connected
+    ?`Connected network · ${streetResult.streets.nodes.length} junctions · ${streetResult.streets.edges.length} streets`
+    :`Disconnected · ${streetResult.streets.components} components · some land is unreachable`):'No street network generated';
+  streetStatus.classList.toggle('invalid',Boolean(streetResult&&!streetResult.streets.connected));
+  element<HTMLButtonElement>('#generate-streets').disabled=!valid;
   element<HTMLOutputElement>('#contract-fingerprint').textContent=fingerprint?`SHA-256 ${fingerprint}`:'';
   if(site){seedInput.value=String(site.seed);const background=site.background;const form=element<HTMLFormElement>('#registration-form');
     for(const control of Array.from(form.elements) as HTMLInputElement[])control.disabled=!background;
@@ -156,7 +171,7 @@ function refreshPanels(){
 }
 
 async function refresh(fit=false){
-  const ticket=++revision;approval=null;fingerprint='';assetError='';pending=true;
+  const ticket=++revision;approval=null;fingerprint='';assetError='';pending=true;streetResult=null;
   const parsed=siteSchema.safeParse(draft);site=parsed.success?parsed.data:null;validation=validateSite(draft);
   jsonInput.value=JSON.stringify(draft,null,2);if(fit)fitSite();
   refreshPanels();redraw();
@@ -193,6 +208,10 @@ element<HTMLButtonElement>('#import-contract').onclick=()=>element<HTMLInputElem
 element<HTMLInputElement>('#contract-file').onchange=async event=>{const file=(event.target as HTMLInputElement).files?.[0];if(!file)return;if(file.size>14_000_000){message('Contract file is too large.');return;}
   try{const imported=JSON.parse(await file.text());draft=imported.contract??imported;message('');await refresh(true);}catch{message('Contract JSON could not be read.');}};
 function download(blob:Blob,name:string){const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+element<HTMLButtonElement>('#generate-streets').onclick=()=>{if(!site||!validation.valid||pending)return;
+  try{streetResult=generateStreetNetwork(site);message(streetResult.streets.connected?'':'Some buildable regions cannot be connected without crossing a constraint.');}
+  catch(error){streetResult=null;message(error instanceof Error?error.message:'Street generation failed.');}
+  refreshPanels();redraw();};
 element<HTMLButtonElement>('#export-contract').onclick=()=>download(new Blob([JSON.stringify({artifact:'site-contract-review',schemaVersion:CONTRACT_VERSION,
   engineId:ENGINE_ID,engineVersion:ENGINE_VERSION,buildId,fingerprint,contract:draft,validation,result:currentResult(),review:approval},null,2)],{type:'application/json'}),`site-${site?.id??'invalid'}-${site?.seed??'draft'}-${buildId}.json`);
 element<HTMLButtonElement>('#export-diagnostic').onclick=()=>{const bitmap=document.createElement('canvas');bitmap.width=2048;bitmap.height=1536;paint(bitmap.getContext('2d')!,2048,1536,1,true);
