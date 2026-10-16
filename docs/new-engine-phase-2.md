@@ -46,9 +46,10 @@ of repeatedly attempting A* across unreachable land.
 
 The network density regression caps total centerline length at 1.8% of buildable
 area on the open, coast, and exclusion fixtures. Current default-seed examples
-range from 0.011 to 0.014. Against the prior version's roughly 0.025 to 0.028, the
-centerline length is about half while each fixture remains connected. This is a
-test limit for these fixtures, not a universal city-planning optimum.
+range from 0.011 to 0.014. Against the prior version's roughly 0.020 to 0.028
+across these fixtures, the centerline length is about half while each fixture
+remains connected. This is a test limit for these fixtures, not a universal
+city-planning optimum.
 
 The output still does not have the user's desired final urban character. It is an
 irregular procedural street mesh with a visibly dominant hub/radial structure and
