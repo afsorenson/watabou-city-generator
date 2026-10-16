@@ -23,6 +23,9 @@ class StateManager {
 	public static var neighborhoodPrototype : Bool = false;
 	public static var frontageGrowth : Bool = false;
 	public static var diagnostic : Bool = false;
+	public static var mixedNeighborhoods : Bool = false;
+	public static var mixPercent : Int = 50;
+	public static var districtOverrides : String = "";
 
 	public static function pullParams() {
 		#if html5
@@ -43,7 +46,11 @@ class StateManager {
 			roofed = params.get( "style" ) == "roofed";
 			neighborhoodPrototype = blockFrontage && params.get( "layout" ) == "prototype";
 			frontageGrowth = blockFrontage && params.get( "layout" ) == "frontage-growth";
-			diagnostic = frontageGrowth && params.get( "style" ) == "diagnostic";
+			mixedNeighborhoods = blockFrontage && params.get( "layout" ) == "mixed";
+			var mix = Std.parseInt( params.get( "mix" ) );
+			if (mix != null && mix >= 0 && mix <= 100) mixPercent = mix;
+			districtOverrides = com.watabou.towngenerator.building.NeighborhoodMix.normalize( params.get( "overrides" ) == null ? "" : params.get( "overrides" ) );
+			diagnostic = (frontageGrowth || mixedNeighborhoods) && params.get( "style" ) == "diagnostic";
 		}
 		#end
 	}
@@ -66,9 +73,14 @@ class StateManager {
 		if (diagnostic) params.set( "style", "diagnostic" );
 		else if (roofed) params.set( "style", "roofed" );
 		else params.delete_( "style" );
-		if (blockFrontage && frontageGrowth) params.set( "layout", "frontage-growth" );
+		if (blockFrontage && mixedNeighborhoods) params.set( "layout", "mixed" );
+		else if (blockFrontage && frontageGrowth) params.set( "layout", "frontage-growth" );
 		else if (blockFrontage && neighborhoodPrototype) params.set( "layout", "prototype" );
 		else params.delete_( "layout" );
+		if (mixedNeighborhoods) {
+			params.set( "mix", Std.string( mixPercent ) );
+			if (districtOverrides != "") params.set( "overrides", districtOverrides ); else params.delete_( "overrides" );
+		} else { params.delete_( "mix" ); params.delete_( "overrides" ); }
 		var query:String = untyped params.toString();
 		var url = Browser.location.pathname + "?" + query + Browser.location.hash;
 		Browser.window.history.replaceState( {size: size, seed: seed, walls: walls}, getStateName(), url );

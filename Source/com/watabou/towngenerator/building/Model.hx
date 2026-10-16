@@ -42,6 +42,8 @@ class Model {
 	public var prototypeFailure : String;
 	public var prototypeJunctionBuildings : Int = 0;
 	public var frontageGrowthData : FrontageNeighborhood;
+	public var frontageGrowthByDistrict : Array<FrontageNeighborhood> = [];
+	public var districtPolicies : Array<NeighborhoodMix.DistrictPolicy> = [];
 
 	// Small Town	6
 	// Large Town	10
@@ -88,7 +90,7 @@ class Model {
 	public var streets	: Array<Street>;
 	public var roads	: Array<Street>;
 
-	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false, blockFrontageMode=false, prototype=false, frontageGrowth=false ) {
+	public function new( nPatches=-1, seed=-1, wallOverride:Null<Bool>=null, footprintMode=false, blockFrontageMode=false, prototype=false, frontageGrowth=false, mixed=false, mixPercent=50, overrides="" ) {
 
 		if (seed > 0) Random.reset( seed );
 		this.nPatches = nPatches != -1 ? nPatches : 15;
@@ -108,7 +110,9 @@ class Model {
 		} while (instance == null);
 		if (blockFrontageMode) BlockFrontage.apply( this, seed );
 		else if (footprints) BuildingFootprints.apply( this, seed );
-		if (blockFrontageMode && frontageGrowth) {
+		if (blockFrontageMode && mixed) {
+			NeighborhoodMix.apply( this, seed, mixPercent, overrides );
+		} else if (blockFrontageMode && frontageGrowth) {
 			try FrontageNeighborhood.apply( this, seed )
 			catch (error:Dynamic) prototypeFailure = Std.string( error );
 		} else if (blockFrontageMode && prototype) {

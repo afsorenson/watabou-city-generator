@@ -623,7 +623,7 @@ try {
       window.__testLandGeometry = typeof com_watabou_towngenerator_building_FrontageNeighborhood === 'undefined'
         ? null : com_watabou_towngenerator_building_FrontageNeighborhood;`) });
   });
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only') && !process.argv.includes('--mix-only')) {
   const seedUrl = `${url}/?size=15&seed=682063530`;
   const first = await capture(page, seedUrl, 'test-results/desktop.png');
   const second = await capture(page, seedUrl, 'test-results/desktop-repeat.png');
@@ -982,7 +982,7 @@ try {
   }
   await page.setViewportSize({ width: 1200, height: 900 });
   }
-  if (!process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
+  if (!process.argv.includes('--roofs-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only') && !process.argv.includes('--mix-only')) {
   const restoreUrl = `${url}/?size=40&seed=682063530&walls=1&buildings=frontage`;
   await capture(page, `${url}/?size=6&seed=2147483647&walls=0`);
   assert.ok(Number(new URL(page.url()).searchParams.get('seed')) >= 1
@@ -1111,7 +1111,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Seed and build controls must fit mobile width');
   console.log('PASS: compiled build identity, editable seed restoration, version-bound sharing, real-build comparison, matching crops and mobile layout');
   }
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--quality-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only') && !process.argv.includes('--mix-only')) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const roofUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`;
     await capture(page, roofUrl, 'test-results/roof-flat-desktop.png');
@@ -1311,7 +1311,7 @@ try {
     }
     console.log('PASS: compound roof plans, clipped planes, unchanged geometry, deterministic styles, viewport-independent PNG detail and sharing');
   }
-  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only')) {
+  if (!process.argv.includes('--identity-only') && !process.argv.includes('--roofs-only') && !process.argv.includes('--prototype-only') && !process.argv.includes('--frontage-only') && !process.argv.includes('--mix-only')) {
     await page.setViewportSize({ width: 1200, height: 900 });
     await capture(page, `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage`);
     const fixtures = await page.evaluate(() => {
@@ -1425,7 +1425,7 @@ try {
     }
     console.log('PASS: bounded outlier-only cleanup, exact plausible/protected geometry, source containment, deterministic modes and roofed PNG export');
   }
-  if (process.argv.includes('--prototype-only') || !process.argv.some(argument => /--(identity|roofs|quality|frontage)-only/.test(argument))) {
+  if (process.argv.includes('--prototype-only') || !process.argv.some(argument => /--(identity|roofs|quality|frontage|mix)-only/.test(argument))) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const prototypeUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage&style=roofed`;
     const snapshot = () => page.evaluate(() => {
@@ -1608,7 +1608,7 @@ try {
     assert.deepEqual((await snapshot()).buildings, prototype.buildings, 'Prototype must recover after a safely rejected attempt');
     console.log(`PASS: one-district prototype ${prototype.target}; connected lanes ${active.length}; T-junctions ${localTJunctions}; junction infill ${prototype.junctionBuildings}; coverage ${oldArea.toFixed(1)} -> ${newArea.toFixed(1)}; dominant orientation ${beforeOrientation.dominant.toFixed(3)} -> ${afterOrientation.dominant.toFixed(3)}`);
   }
-  if (process.argv.includes('--frontage-only') || !process.argv.some(argument => /--(identity|roofs|quality|prototype)-only/.test(argument))) {
+  if (process.argv.includes('--frontage-only') || !process.argv.some(argument => /--(identity|roofs|quality|prototype|mix)-only/.test(argument))) {
     await page.setViewportSize({ width: 1200, height: 900 });
     const growthUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage&style=flat`;
     const city = () => page.evaluate(() => {
@@ -1768,6 +1768,141 @@ try {
     assert.ok((await comparisonExport).suggestedFilename().includes('-frontage-growth-'));
     await page.screenshot({ path: 'test-results/frontage-diagnostic-comparison.png' });
     console.log(`PASS: frontage-driven district ${grown.target}; plots ${audit.plots.length}; streets ${audit.streets.length}; density ${(grown.attempt.candidateArea / previousArea).toFixed(3)}; explicit frontage, connected access, reallocation and diagnostics`);
+  }
+  if (process.argv.includes('--mix-only') || !process.argv.some(argument => /--(identity|roofs|quality|prototype|frontage)-only/.test(argument))) {
+    page.setDefaultTimeout(120000);
+    page.setDefaultNavigationTimeout(120000);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    const mixUrl = `${url}/?size=40&seed=1091337103&walls=1&buildings=frontage&style=flat`;
+    await capture(page, mixUrl);
+    const baselineHash = await geometryHash(page);
+    const snapshot = () => page.evaluate(() => {
+      const model = window.__testModel;
+      const points = polygon => polygon.map(point => [point.x, point.y]);
+      return { policies: model.districtPolicies, buildings: model.patches.map(patch => patch.ward.geometry.map(points)),
+        streets: model.streets.map(points), roads: model.roads.map(points), wall: points(model.wall.shape),
+        growth: model.frontageGrowthByDistrict.map(data => data ? {block: points(data.block),
+          plots: data.plots.map(plot => ({polygon: points(plot.polygon), building: points(plot.building), street: plot.street})),
+          lanes: data.lanes.map(points), streets: data.streets.map(street => ({...street,
+            start: [street.start.x, street.start.y], end: [street.end.x, street.end.y]}))} : null) };
+    });
+    const baseline = await snapshot();
+    await page.goto(`${mixUrl}&layout=mixed&mix=0`);
+    await page.waitForFunction(() => window.cityGenerator?.mixed);
+    assert.equal(await geometryHash(page), baselineHash, '0% with no overrides must reproduce Standard exactly');
+    const zero = await snapshot();
+    assert.ok(zero.policies.length > 0 && zero.policies.every(policy => policy.applied === 'grid' && policy.policy === 'auto'));
+    const clickedDistrict = await page.evaluate(() => {
+      const model = window.__testModel;
+      const canvas = document.querySelector('canvas').getBoundingClientRect();
+      const vertices = model.patches.filter(patch => patch.withinCity).flatMap(patch => patch.shape);
+      const minX = Math.min(...vertices.map(point=>point.x)), maxX = Math.max(...vertices.map(point=>point.x));
+      const minY = Math.min(...vertices.map(point=>point.y)), maxY = Math.max(...vertices.map(point=>point.y));
+      const margin = Math.max(maxX-minX,maxY-minY)*0.08;
+      const scale = Math.min(canvas.width/(maxX-minX+margin*2),canvas.height/(maxY-minY+margin*2));
+      const polygon = model.frontageBlocks[38];
+      const center = polygon.reduce((sum,point)=>({x:sum.x+point.x/polygon.length,y:sum.y+point.y/polygon.length}),{x:0,y:0});
+      return {x:canvas.x+canvas.width/2+(center.x-(minX+maxX)/2)*scale,
+        y:canvas.y+canvas.height/2+(center.y-(minY+maxY)/2)*scale};
+    });
+    await page.mouse.click(clickedDistrict.x,clickedDistrict.y);
+    assert.equal(await page.locator('#district-dialog').isVisible(),true,'Clicking an eligible neighborhood must open its policy editor');
+    assert.ok(await page.locator('.selected-district label').textContent().then(text=>text.includes('District 38')));
+    await page.getByRole('button',{name:'Close district policies',exact:true}).click();
+    const applyPercent = async percent => {
+      await page.locator('#growth-mix').evaluate((input, value) => { input.value = value;
+        input.dispatchEvent(new Event('input', {bubbles:true})); input.dispatchEvent(new Event('change', {bubbles:true})); }, String(percent));
+      await page.waitForFunction(value => window.cityGenerator.mixPercent === value && !document.querySelector('#growth-mix').disabled, percent);
+    };
+    await applyPercent(50);
+    const middle = await snapshot();
+    const middleHash = await geometryHash(page);
+    assert.ok(middle.policies.some(policy => policy.applied === 'growth') && middle.policies.some(policy => policy.applied === 'grid'));
+    await page.reload(); await page.waitForFunction(() => window.cityGenerator?.mixed);
+    assert.equal(await geometryHash(page), middleHash, 'Same seed and mix must reproduce after refresh');
+    await applyPercent(100);
+    const all = await snapshot();
+    assert.ok(all.policies.every(policy => policy.requested === 'growth'), '100% must request growth for every eligible automatic district');
+    for (const policy of middle.policies.filter(policy => policy.requested === 'growth'))
+      assert.equal(all.policies.find(candidate => candidate.index === policy.index).requested, 'growth', 'Increasing percentage must not deselect automatic requests');
+    const areaOf = polygons => polygons.reduce((sum, part) => sum + polygonArea(part[0]), 0);
+    for (const result of [middle, all]) {
+      assert.deepEqual(result.streets, baseline.streets); assert.deepEqual(result.roads, baseline.roads); assert.deepEqual(result.wall, baseline.wall);
+      const requested = new Set(result.policies.filter(policy => policy.requested === 'growth').map(policy => policy.index));
+      for (const policy of result.policies) {
+        if (policy.applied === 'grid') assert.deepEqual(result.buildings[policy.index], baseline.buildings[policy.index],
+          'Grid and rejected growth districts must remain exact Standard geometry');
+        if (policy.status === 'fallback') assert.equal(policy.requested, 'growth');
+      }
+      result.buildings.forEach((buildings, index) => {
+        if (!requested.has(index)) assert.deepEqual(buildings, baseline.buildings[index], 'Unrequested and protected districts must remain exact');
+      });
+      for (const data of result.growth.filter(Boolean)) {
+        const tolerance = polygonArea(data.block) * 1e-6;
+        const reached = new Set(data.streets.filter(street => street.existing).map(street => street.id));
+        for (const street of data.streets.filter(street => !street.existing)) { assert.ok(reached.has(street.parent)); reached.add(street.id); }
+        for (let index = 0; index < data.plots.length; index += 1) {
+          const plot = data.plots[index]; assert.ok(reached.has(plot.street));
+          assert.ok(areaOf(polygonClipping.difference([plot.building], [plot.polygon])) < tolerance);
+          assert.ok(areaOf(polygonClipping.difference([plot.polygon], [data.block])) < tolerance);
+          for (const lane of data.lanes) assert.ok(areaOf(polygonClipping.intersection([plot.polygon], [lane])) < tolerance);
+          for (let other = 0; other < index; other += 1) assert.ok(areaOf(polygonClipping.intersection([plot.polygon], [data.plots[other].polygon])) < tolerance);
+        }
+      }
+    }
+    await writeFile('test-results/mix-audit.json', JSON.stringify({zero: zero.policies, middle: middle.policies, all: all.policies}, null, 2));
+    await page.screenshot({path:'test-results/mix-100-desktop.png'});
+    await applyPercent(0);
+    await page.getByRole('button', {name:'District policies',exact:true}).click();
+    await page.getByLabel('District 38', {exact:false}).selectOption('growth');
+    await page.getByRole('button', {name:'Apply district policies',exact:true}).click();
+    await page.waitForFunction(() => window.cityGenerator.districtOverrides === '38:growth' && !document.querySelector('#growth-mix').disabled);
+    const overridden = await snapshot();
+    assert.equal(overridden.policies.find(policy=>policy.index===38).applied,'growth','Growth override must win at 0%');
+    assert.deepEqual(overridden.policies.filter(policy=>policy.applied==='growth').map(policy=>policy.index),[38]);
+    const overriddenHash = await geometryHash(page);
+    await page.getByRole('button', {name:'District policies',exact:true}).click();
+    await page.screenshot({path:'test-results/mix-district-dialog.png'});
+    await page.getByRole('button', {name:'Close district policies',exact:true}).click();
+    await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:url});
+    await page.getByRole('button',{name:'Copy city link'}).click();
+    await page.waitForFunction(()=>document.querySelector('#build-status').textContent==='City link copied.');
+    const shared = await page.evaluate(()=>navigator.clipboard.readText());
+    assert.equal(new URL(shared).searchParams.get('mix'),'0'); assert.equal(new URL(shared).searchParams.get('overrides'),'38:growth');
+    await page.goto(shared); await page.waitForFunction(()=>window.cityGenerator?.mixed);
+    assert.equal(await geometryHash(page),overriddenHash);
+    const pngPromise = page.waitForEvent('download');
+    await page.getByRole('button',{name:'Export PNG',exact:true}).click();
+    const policyPng = await pngPromise;
+    assert.match(policyPng.suggestedFilename(),/-mixed0-policies[0-9a-f]{8}-/,'Mixed PNGs must identify explicit district policies');
+    await policyPng.saveAs('test-results/mix-overridden.png');
+    for(const width of [390,320]){await page.setViewportSize({width,height:844});await page.screenshot({path:`test-results/mix-mobile-${width}.png`});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+    await page.setViewportSize({width:1200,height:900});
+    await page.getByRole('button',{name:'Compare builds'}).click();
+    await page.waitForFunction(()=>!document.querySelector('[aria-label="Download after PNG"]')?.disabled,null,{timeout:120000});
+    assert.equal(await page.getByLabel('After layout',{exact:true}).inputValue(),'mixed');
+    assert.equal(await page.getByLabel('After growth %',{exact:true}).inputValue(),'0');
+    assert.equal(await page.locator('#after-overrides').inputValue(),'38:growth');
+    const comparedPng = page.waitForEvent('download');await page.getByRole('button',{name:'Download after PNG'}).click();
+    assert.match((await comparedPng).suggestedFilename(),/-mix0-policies[0-9a-f]{8}-/);
+    await page.screenshot({path:'test-results/mix-comparison.png'});
+    await page.getByLabel('Seed',{exact:true}).fill('682063530');
+    await page.getByRole('button',{name:'Apply comparison settings'}).click();
+    await page.waitForFunction(()=>!document.querySelector('[aria-label="Download after PNG"]').disabled);
+    assert.equal(await page.locator('#after-overrides').inputValue(),'','Comparison city changes must clear seed-scoped overrides');
+    await page.goto(shared);await page.waitForFunction(()=>window.cityGenerator?.mixed);
+    await page.getByRole('button',{name:'District policies',exact:true}).click();
+    await page.getByRole('button',{name:'Reset district policies to Automatic',exact:true}).click();
+    await page.waitForFunction(()=>window.cityGenerator.districtOverrides===''&&!document.querySelector('#growth-mix').disabled);
+    assert.equal(await geometryHash(page),baselineHash);
+    await page.evaluate(()=>window.cityGenerator.setMix(100,'38:grid'));
+    assert.equal((await snapshot()).policies.find(policy=>policy.index===38).requested,'grid','Grid override must win at 100%');
+    await page.evaluate(()=>window.cityGenerator.setMix(0,'38:growth'));
+    await page.getByLabel('Seed',{exact:true}).fill('682063530');await page.getByRole('button',{name:'Apply seed'}).click();
+    await page.waitForFunction(()=>window.cityGenerator.seed===682063530&&!document.querySelector('#growth-mix').disabled);
+    assert.equal(await page.evaluate(()=>window.cityGenerator.districtOverrides),'','Overrides must reset when the seed changes');
+    console.log(`PASS: deterministic mixed neighborhoods; eligible ${all.policies.length}; 50% accepted ${middle.policies.filter(policy=>policy.applied==='growth').length}; 100% accepted ${all.policies.filter(policy=>policy.applied==='growth').length}; explicit fallbacks, override precedence, sharing, comparison and access`);
   }
   assert.deepEqual(errors, [], 'Browser must not report runtime errors');
   console.log('PASS: seeded walls on/off, size and regeneration controls, desktop/mobile layout, monochrome 2048px PNG export');

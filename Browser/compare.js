@@ -7,6 +7,8 @@ const beforeInput = document.querySelector('#before-build');
 const afterInput = document.querySelector('#after-build');
 const beforeLayoutInput = document.querySelector('#before-layout');
 const afterLayoutInput = document.querySelector('#after-layout');
+const beforeMixInput = document.querySelector('#before-mix');
+const afterMixInput = document.querySelector('#after-mix');
 const seedInput = document.querySelector('#comparison-seed');
 const sizeInput = document.querySelector('#comparison-size');
 const wallsInput = document.querySelector('#comparison-walls');
@@ -42,7 +44,7 @@ function loadEngine(build, query) {
     const timer = setTimeout(() => {
       completed = true;
       reject(new Error(`Build ${build.id} did not finish loading.`));
-    }, 20000);
+    }, query.layout === 'mixed' ? 120000 : 20000);
     frame.onload = async () => {
       try {
         const style = frame.contentDocument.createElement('style');
@@ -57,6 +59,9 @@ function loadEngine(build, query) {
             if (Boolean(api.diagnostic) !== (query.style === 'diagnostic')) throw new Error(`Build ${build.id} does not support the requested diagnostic style and layout.`);
             if (Boolean(api.prototype) !== (query.layout === 'prototype')) throw new Error(`Build ${build.id} does not support the requested neighborhood layout.`);
             if (Boolean(api.frontageGrowth) !== (query.layout === 'frontage-growth')) throw new Error(`Build ${build.id} does not support frontage-driven growth.`);
+            if (Boolean(api.mixed) !== (query.layout === 'mixed')) throw new Error(`Build ${build.id} does not support mixed neighborhoods.`);
+            if (query.layout === 'mixed' && (api.mixPercent !== query.mix || api.districtOverrides !== query.overrides))
+              throw new Error(`Build ${build.id} did not apply the requested mix policies.`);
             if (query.layout === 'prototype' && api.prototypePatch < 0) throw new Error(`Build ${build.id} retained Standard layout because no district met prototype safeguards.`);
             if (query.layout === 'frontage-growth' && api.prototypePatch < 0) throw new Error(`Build ${build.id} retained Standard layout because no district met frontage-growth safeguards.`);
             if (api.seed !== query.seed || api.size !== query.size || api.walls !== query.walls
@@ -79,7 +84,8 @@ function loadEngine(build, query) {
     };
     const url = new URL(build.url, root);
     url.search = new URLSearchParams({ seed: query.seed, size: query.size, walls: query.walls ? '1' : '0',
-      buildings: query.buildings, style: query.style, layout: query.layout, embed: '1' });
+      buildings: query.buildings, style: query.style, layout: query.layout,
+      mix: query.mix ?? 50, overrides: query.overrides ?? '', embed: '1' });
     frame.src = url.href;
     document.body.append(frame);
   });
@@ -106,7 +112,8 @@ function comparisonUrl() {
   const url = new URL('compare.html', root);
   url.search = new URLSearchParams({ before: settings.before, after: settings.after, seed: settings.seed,
     size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style,
-    beforeLayout: settings.beforeLayout, afterLayout: settings.afterLayout, view: regionInput.value });
+    beforeLayout: settings.beforeLayout, afterLayout: settings.afterLayout, beforeMix: settings.beforeMix, afterMix: settings.afterMix,
+    beforeOverrides: settings.beforeOverrides, afterOverrides: settings.afterOverrides, view: regionInput.value });
   return url;
 }
 
@@ -115,6 +122,11 @@ async function render() {
   for (const frame of frames) frame.remove();
   frames = [];
   snapshots.clear();
+  if (settings && (settings.seed !== Number(seedInput.value) || settings.size !== Number(sizeInput.value)
+    || settings.walls !== wallsInput.checked)) {
+    document.querySelector('#before-overrides').value = '';
+    document.querySelector('#after-overrides').value = '';
+  }
   for (const canvas of document.querySelectorAll('.comparison-canvas')) {
     const context = canvas.getContext('2d');
     context.fillStyle = '#ffffff';
@@ -122,7 +134,9 @@ async function render() {
   }
   settings = { before: beforeInput.value, after: afterInput.value, seed: Number(seedInput.value),
     size: Number(sizeInput.value), walls: wallsInput.checked, buildings: buildingsInput.value, style: styleInput.value,
-    beforeLayout: beforeLayoutInput.value, afterLayout: afterLayoutInput.value };
+    beforeLayout: beforeLayoutInput.value, afterLayout: afterLayoutInput.value,
+    beforeMix: Number(beforeMixInput.value), afterMix: Number(afterMixInput.value),
+    beforeOverrides: document.querySelector('#before-overrides').value, afterOverrides: document.querySelector('#after-overrides').value };
   history.replaceState(null, '', comparisonUrl());
   status.textContent = 'Rendering comparison...';
   for (const control of form.elements) control.disabled = true;
@@ -132,7 +146,8 @@ async function render() {
       const build = catalog.builds.find(candidate => candidate.id === settings[side]);
       if (!build) throw new Error(`Archived build ${settings[side]} is not available.`);
       document.querySelector(`[data-side="${side}"] .comparison-build`).textContent = build.id;
-      const frame = await loadEngine(build, { ...settings, layout: settings[`${side}Layout`] });
+      const frame = await loadEngine(build, { ...settings, layout: settings[`${side}Layout`],
+        mix: settings[`${side}Mix`], overrides: settings[`${side}Overrides`] });
       await new Promise(resolveFrame => frame.contentWindow.requestAnimationFrame(() =>
         frame.contentWindow.requestAnimationFrame(resolveFrame)));
       const png = await capturePng(frame);
@@ -140,7 +155,8 @@ async function render() {
       image.src = png;
       await image.decode();
       if (image.width !== 2048 || image.height !== 2048) throw new Error('Unexpected comparison export dimensions.');
-      snapshots.set(side, { build, png, image, prototypeCrop: frame.contentWindow.cityGenerator.prototypeCrop });
+      snapshots.set(side, { build, png, image, prototypeCrop: frame.contentWindow.cityGenerator.prototypeCrop,
+        policyId: frame.contentWindow.cityGenerator.districtOverrideId ?? '' });
     }));
     const crop = snapshots.get('after').prototypeCrop ?? snapshots.get('before').prototypeCrop;
     if (crop) regions.prototype = [crop.left, crop.top];
@@ -151,7 +167,8 @@ async function render() {
     status.textContent = `Seed ${settings.seed} · Size ${settings.size} · ${settings.walls ? 'Walled' : 'Open'} · ${settings.buildings}`;
     for (const button of document.querySelectorAll('.download-comparison')) button.disabled = false;
     const back = new URL(`builds/${settings.after}/`, root);
-    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style, layout: settings.afterLayout });
+    back.search = new URLSearchParams({ seed: settings.seed, size: settings.size, walls: settings.walls ? '1' : '0', buildings: settings.buildings, style: settings.style,
+      layout: settings.afterLayout, mix: settings.afterMix, overrides: settings.afterOverrides });
     document.querySelector('#back-link').href = back.href;
   } catch (error) {
     status.textContent = error.message;
@@ -171,7 +188,8 @@ for (const button of document.querySelectorAll('.download-comparison')) {
     if (!snapshot) return;
     const anchor = document.createElement('a');
     anchor.href = regions[regionInput.value] ? button.closest('figure').querySelector('canvas').toDataURL('image/png') : snapshot.png;
-    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${settings.style}-${settings[`${side}Layout`]}-${regionInput.value}.png`;
+    const policy = settings[`${side}Layout`] === 'mixed' ? `-mix${settings[`${side}Mix`]}${snapshot.policyId ? `-policies${snapshot.policyId}` : ''}` : '';
+    anchor.download = `city-${settings.size}-${settings.seed}-${settings.walls ? 'walled' : 'open'}-${settings.buildings}-${side}-${snapshot.build.id}-${settings.style}-${settings[`${side}Layout`]}${policy}-${regionInput.value}.png`;
     anchor.click();
   });
 }
@@ -210,6 +228,10 @@ try {
   styleInput.value = params.get('style') ?? 'flat';
   beforeLayoutInput.value = params.get('beforeLayout') ?? 'standard';
   afterLayoutInput.value = params.get('afterLayout') ?? params.get('layout') ?? 'standard';
+  beforeMixInput.value = params.get('beforeMix') ?? params.get('mix') ?? '50';
+  afterMixInput.value = params.get('afterMix') ?? params.get('mix') ?? '50';
+  document.querySelector('#before-overrides').value = params.get('beforeOverrides') ?? '';
+  document.querySelector('#after-overrides').value = params.get('afterOverrides') ?? params.get('overrides') ?? '';
   regionInput.value = params.get('view') ?? 'whole';
   document.querySelector('#back-link').href = root.href;
   await render();

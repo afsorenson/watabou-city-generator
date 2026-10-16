@@ -65,3 +65,16 @@ Keep same-seed geometry hashes, Flat restoration, build-bound links, and exact
 desktop/mobile export comparisons as correctness gates. The user elected to
 continue frontage-driven generation first; this document does not implement or
 authorize additional performance changes.
+
+## Later Mixed-Layout Measurement
+
+During the opt-in neighborhood-mixing implementation, repeated city-wide growth
+attempts added a separate geometry workload. At size 40, seed 1091337103, walls on,
+Flat style, an isolated Chrome run measured approximately 8.2 seconds for 50%
+requested growth (12 attempts, 6 accepted) and 31.1 seconds for 100% (25 attempts,
+13 accepted). These are single development-build observations, not medians. They
+must not be confused with the original single-district measurements above.
+
+Mixed regeneration paints a busy status before synchronous work, but has no worker
+or cancellation. This is UI feedback, not a throughput optimization. The user chose
+layout controls as the next step; the deferred optimization plan remains separate.

@@ -88,6 +88,8 @@ class TownScene extends Scene {
 		if (StateManager.roofed) suffix += "-roofed";
 		if (StateManager.neighborhoodPrototype) suffix += "-prototype";
 		if (StateManager.frontageGrowth) suffix += "-frontage-growth";
+		if (StateManager.mixedNeighborhoods) suffix += "-mixed" + StateManager.mixPercent;
+		if (StateManager.mixedNeighborhoods && StateManager.districtOverrides != "") suffix += "-policies" + haxe.crypto.Md5.encode( StateManager.districtOverrides ).substr( 0, 8 );
 		if (StateManager.diagnostic) suffix += "-diagnostic";
 		new FileReference().save( ByteArray.fromBytes( bytes.sub( 0, png.length ) ),
 			'city-${StateManager.size}-${StateManager.seed}-${Model.instance.wall != null ? "walled" : "open"}$suffix-${BuildInfo.identifier()}.png' );

@@ -62,6 +62,7 @@ window.saveAs = function(blob, name, options) {
   const layouts = (await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('id="neighborhood-layout"')
     ? ['standard', 'prototype'] : ['standard'];
   if ((await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('value="frontage-growth"')) layouts.push('frontage-growth');
+  if ((await readFile(join(root, 'Browser/index.html'), 'utf8')).includes('value="mixed"')) layouts.push('mixed');
   await writeJson(statePath, { id, commit, sourceHash, dirty, styles, layouts, legacy: false, builtAt: new Date().toISOString() });
   console.log(id);
 } else if (process.argv[2] === 'finish') {

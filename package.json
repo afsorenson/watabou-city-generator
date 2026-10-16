@@ -13,7 +13,8 @@
     "test:roofs": "node scripts/smoke-test.mjs --roofs-only",
     "test:quality": "node scripts/smoke-test.mjs --quality-only",
     "test:prototype": "node scripts/smoke-test.mjs --prototype-only",
-    "test:frontage": "node scripts/smoke-test.mjs --frontage-only"
+    "test:frontage": "node scripts/smoke-test.mjs --frontage-only",
+    "test:mix": "node scripts/smoke-test.mjs --mix-only"
   },
   "devDependencies": {
     "esbuild": "0.25.12",

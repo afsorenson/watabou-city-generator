@@ -6,6 +6,8 @@ import openfl.events.MouseEvent;
 
 import com.watabou.towngenerator.building.Patch;
 import com.watabou.towngenerator.ui.Tooltip;
+import com.watabou.towngenerator.StateManager;
+import com.watabou.towngenerator.building.Model;
 
 using com.watabou.utils.GraphicsExtender;
 
@@ -25,12 +27,19 @@ class PatchView extends Shape {
 		hotArea.graphics.drawPolygon( patch.shape );
 		// Since 5.1.5 assigning a listener to ROLL_OVER here causes a crash
 		hotArea.addEventListener( MouseEvent.MOUSE_OVER, onRollOver );
+		#if html5
+		hotArea.buttonMode = StateManager.mixedNeighborhoods;
+		hotArea.addEventListener( MouseEvent.CLICK, function( event:MouseEvent ):Void {
+			if (!StateManager.mixedNeighborhoods) return;
+			js.Browser.document.dispatchEvent( new js.html.CustomEvent( "district-selected", {detail: Model.instance.patches.indexOf( patch )} ) );
+		} );
+		#end
 	}
 
 	private function onRollOver( e:MouseEvent )
 		if (patch != lastPatch) {
 			lastPatch = patch;
-			Tooltip.instance.set( patch.ward.getLabel() );
+			Tooltip.instance.set( StateManager.mixedNeighborhoods ? "District " + Model.instance.patches.indexOf( patch ) + " - " + patch.ward.getLabel() : patch.ward.getLabel() );
 		}
 }
 

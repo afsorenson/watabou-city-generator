@@ -13,6 +13,7 @@ mkdir -p Export/html5/bin/icons
 cp node_modules/lucide-static/icons/refresh-cw.svg node_modules/lucide-static/icons/download.svg Export/html5/bin/icons/
 cp node_modules/lucide-static/icons/check.svg node_modules/lucide-static/icons/link.svg node_modules/lucide-static/icons/columns-2.svg Export/html5/bin/icons/
 cp node_modules/lucide-static/icons/arrow-left.svg Export/html5/bin/icons/
+cp node_modules/lucide-static/icons/settings-2.svg node_modules/lucide-static/icons/x.svg node_modules/lucide-static/icons/rotate-ccw.svg Export/html5/bin/icons/
 cp node_modules/lucide-static/LICENSE Export/html5/bin/icons/LICENSE
 mkdir -p Export/html5/bin/vendor
 cp node_modules/polygon-clipping/dist/polygon-clipping.umd.min.js Export/html5/bin/vendor/

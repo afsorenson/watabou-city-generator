@@ -238,6 +238,45 @@ straight connections and can stop with residual unallocated land; this is not a
 complete historical growth or arbitrary-terrain pathfinding engine. Performance
 optimization remains deferred, and this new experiment can add geometry work.
 
+### Mixed Neighborhoods
+
+In **Block Rows**, select **Layout > Mixed**. **Requested growth** is a 0-100%
+automatic selection threshold, not a promise of the achieved city-wide growth
+share. Each eligible district has a stable seed-derived score; increasing the
+threshold requests a superset of automatic districts without rerolling the city.
+0% with no overrides reproduces Standard exactly. 100% requests growth everywhere
+eligible, but districts that fail existing access, clipping, plot-count, or density
+safeguards retain their exact Grid geometry. The summary reports growth and grid
+totals, with fallback requests included in the Grid count.
+
+Click a neighborhood on the map or choose **Districts** to edit its policy:
+**Automatic**, **Grid**, or **Growth**. Explicit Grid wins even at 100%; explicit
+Growth requests a district even at 0%, but does not bypass safety/density checks.
+Reset returns all districts to Automatic. Only supported convex regenerated
+districts are listed; landmarks, outside-wall suburbs, and unsupported districts
+are retained rather than forced through an unvalidated generator.
+
+```text
+http://127.0.0.1:8788/?size=40&seed=1091337103&walls=1&buildings=frontage&style=flat&layout=mixed&mix=50
+```
+
+Mix percentage and canonical `overrides=38:growth,12:grid` policies are included
+in version-bound links and restored after refresh. Overrides are scoped to the
+current city: New City, a different applied seed, or changed size/wall settings
+clears them; the requested percentage remains. The same reset applies when city
+settings change in Compare. Comparison panels retain their independent mix and
+override sets. PNG names include the mix percentage and an identifier for explicit
+policy sets. Diagnostic draws accepted growth districts only, never rejected ones.
+
+At size 40, seed 1091337103, walls on, there are 25 eligible districts. A 50%
+request selects 12 and accepts 6; 100% requests all 25 and accepts 13, with 12
+Grid fallbacks. These figures are fixed-fixture results, not guarantees for other
+seeds. In an isolated Flat Chrome measurement, 50% generation took about 8 seconds
+and 100% about 31 seconds. The painted generating state does not make synchronous
+generation nonblocking or cancellable. Keep Roofed off while iterating if speed
+matters. Performance optimization and terrain-informed Automatic policy remain
+future work; Automatic currently uses only the seed, district index, and percentage.
+
 ### Building Modes
 
 **Buildings** switches between **Original** parcel-shaped buildings and the
@@ -416,6 +455,19 @@ For coupled frontage-growth, exclusion, and diagnostic workflows:
 ```sh
 npm run test:frontage
 ```
+
+For city-wide mixing and district-policy workflows:
+
+```sh
+npm run test:mix
+```
+
+Mix checks cover exact 0% baseline, deterministic/monotonic requests, explicit
+growth and grid precedence, honest fallback states, protected/unrequested district
+preservation, accepted growth access/containment/nonoverlap, real map selection,
+policy-scoped PNGs, seed-scoped override reset, archived links, comparisons, and
+desktop/mobile controls. `test-results/mix-audit.json` records endpoint and midpoint
+policies; screenshots include `mix-district-dialog.png` and `mix-comparison.png`.
 
 Growth checks require exactly one changed district, exact surrounding/main-road
 and wall preservation, positive frontage on physically reachable streets, real

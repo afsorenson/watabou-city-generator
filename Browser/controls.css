@@ -21,6 +21,21 @@ h1 { margin: 0; font: 600 20px "Palatino Linotype", "Book Antiqua", serif; }
 .seed-setting { display: flex; gap: 6px; margin: 0; }
 #seed { width: 132px; font-variant-numeric: tabular-nums; }
 #neighborhood-layout { width: 150px; }
+.mix-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 8px 20px; border-bottom: 1px solid var(--line); flex: none; }
+.mix-controls[hidden] { display: none; }
+.mix-controls input[type="range"] { width: 130px; accent-color: var(--accent); }
+#growth-mix-value { min-width: 4ch; font-variant-numeric: tabular-nums; }
+#mix-summary { color: var(--muted); font-size: 12px; }
+.embedded .mix-controls { display: none; }
+.district-dialog { max-height: 85dvh; padding: 16px; }
+.district-dialog header, .district-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.district-dialog h2 { font: 600 20px "Palatino Linotype", serif; margin: 0; }
+.district-policy-list { overflow: auto; max-height: 58dvh; margin: 16px 0; }
+.district-policy-row { display: grid; grid-template-columns: minmax(0, 1fr) 116px; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.district-policy-row label { white-space: normal; }
+.district-policy-row output { grid-column: 1; font-size: 11px; color: var(--muted); }
+.district-policy-row select { grid-column: 2; grid-row: span 2; }
+.selected-district { background: #eaf0ec; outline: 1px solid #a7b8ae; outline-offset: -1px; }
 .diagnostic-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 6px 20px; font-size: 11px; border-bottom: 1px solid var(--line); }
 .diagnostic-legend[hidden] { display: none; }
 .diagnostic-legend span { display: inline-flex; align-items: center; gap: 6px; }

@@ -12,9 +12,13 @@
     <div class="identity"><a id="back-link" class="back-link" title="Return to city" aria-label="Return to city"><img src="./icons/arrow-left.svg" alt=""></a><h1>Build Comparison</h1></div>
     <form id="comparison-form" class="comparison-settings">
       <label>Before <select id="before-build" aria-label="Before build" required></select></label>
-      <label>Before layout <select id="before-layout" aria-label="Before layout"><option value="standard">Standard</option><option value="prototype">One District</option><option value="frontage-growth">Frontage Growth</option></select></label>
+      <label>Before layout <select id="before-layout" aria-label="Before layout"><option value="standard">Standard</option><option value="prototype">One District</option><option value="frontage-growth">Frontage Growth</option><option value="mixed">Mixed</option></select></label>
+      <label>Before growth % <input id="before-mix" type="number" min="0" max="100" step="1" value="50"></label>
+      <input id="before-overrides" type="hidden" value="">
       <label>After <select id="after-build" aria-label="After build" required></select></label>
-      <label>After layout <select id="after-layout" aria-label="After layout"><option value="standard">Standard</option><option value="prototype">One District</option><option value="frontage-growth">Frontage Growth</option></select></label>
+      <label>After layout <select id="after-layout" aria-label="After layout"><option value="standard">Standard</option><option value="prototype">One District</option><option value="frontage-growth">Frontage Growth</option><option value="mixed">Mixed</option></select></label>
+      <label>After growth % <input id="after-mix" type="number" min="0" max="100" step="1" value="50"></label>
+      <input id="after-overrides" type="hidden" value="">
       <label>Seed <input id="comparison-seed" type="number" min="1" max="2147483646" step="1" required></label>
       <label>City size <input id="comparison-size" type="number" min="6" max="40" step="1" required></label>
       <label><input id="comparison-walls" type="checkbox"> Walls</label>

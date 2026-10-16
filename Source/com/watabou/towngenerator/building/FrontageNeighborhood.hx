@@ -174,15 +174,16 @@ class FrontageNeighborhood {
 		#end
 	}
 
-	public static function apply( model:Model, seed:Int ):Void {
-		var chosen = -1;
+	public static function apply( model:Model, seed:Int, district:Int=-1 ):Bool {
+		var chosen = district;
 		var largest = 0.0;
-		for (index in 0...model.frontageBlocks.length) {
+		if (chosen < 0) for (index in 0...model.frontageBlocks.length) {
 			var block = model.frontageBlocks[index];
 			if (block.length < 3 || !block.isConvex() || block.compactness < 0.45) continue;
 			if (block.square > largest) { largest = block.square; chosen = index; }
 		}
-		if (chosen < 0) return;
+		if (chosen < 0 || chosen >= model.frontageBlocks.length) return false;
+		if (model.frontageGrowthByDistrict.length == 0) model.frontageGrowthByDistrict = [for (patch in model.patches) null];
 		var patch = model.patches[chosen];
 		var block = model.frontageBlocks[chosen];
 		var sources:Array<Polygon> = [];
@@ -202,7 +203,7 @@ class FrontageNeighborhood {
 			} );
 			if (eligible) sources.push( new Polygon( [start, end] ) );
 		} );
-		if (sources.length == 0) return;
+		if (sources.length == 0) return false;
 		var ward:CommonWard = cast patch.ward;
 		var generated = new FrontageNeighborhood( block, sources, ward.getFrontageLotArea(), seed, model.frontageTransitions[chosen] );
 		generated.generate();
@@ -212,7 +213,7 @@ class FrontageNeighborhood {
 		var newArea = 0.0;
 		for (plot in generated.plots) newArea += Math.abs( plot.building.square );
 		model.prototypeAttempt = {patchIndex: chosen, previousArea: oldArea, candidateArea: newArea};
-		if (generated.plots.length < 8 || generated.lanes.length == 0 || newArea < oldArea * 0.8 || newArea > oldArea * 1.15) return;
+		if (generated.plots.length < 8 || generated.lanes.length == 0 || newArea < oldArea * 0.8 || newArea > oldArea * 1.15) return false;
 		patch.ward.geometry = [for (plot in generated.plots) plot.building];
 		model.frontagePlots[chosen] = [for (plot in generated.plots) plot.polygon];
 		model.frontageLanes[chosen] = generated.lanes;
@@ -226,6 +227,8 @@ class FrontageNeighborhood {
 		model.frontageCourtyards[chosen] = new Polygon();
 		model.prototypePatchIndex = chosen;
 		model.prototypeRegions = [];
+		model.frontageGrowthByDistrict[chosen] = generated;
+		return true;
 	}
 
 	private static function project( point:Point, street:FrontageStreet ):Point {
